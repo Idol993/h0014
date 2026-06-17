@@ -1,0 +1,56 @@
+{
+  "jd": {
+    "name": "京东",
+    "description": "京东主图及详情页标准",
+    "output": {
+      "format": "webp",
+      "quality": 78,
+      "keep_exif": true
+    },
+    "sizes": [
+      {
+        "name": "主图",
+        "width": 800,
+        "height": 800,
+        "suffix": "_main"
+      },
+      {
+        "name": "PC详情",
+        "width": 990,
+        "height": 1500,
+        "suffix": "_pc"
+      },
+      {
+        "name": "移动端",
+        "width": 750,
+        "height": 1200,
+        "suffix": "_m"
+      }
+    ],
+    "white_balance": {
+      "method": "auto",
+      "reference_white": [
+        245,
+        245,
+        245
+      ],
+      "brightness_threshold": 235
+    },
+    "crop": {
+      "mode": "saliency",
+      "padding_ratio": 0.08,
+      "protect_faces": true,
+      "entropy_weight": 0.6,
+      "saliency_weight": 0.4
+    },
+    "rename": {
+      "template": "JD_{brand}_{category}_{color}_{index}",
+      "index_padding": 4,
+      "start_index": 1
+    },
+    "quality_check": {
+      "sample_interval": 25,
+      "sample_filename": "_JD_SAMPLE.webp"
+    }
+  }
+}

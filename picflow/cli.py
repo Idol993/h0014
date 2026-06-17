@@ -1,0 +1,566 @@
+"""PicFlow CLI入口 - 基于Typer构建的命令行界面"""
+from __future__ import annotations
+
+import json
+import sys
+import time
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import typer
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
+from rich.prompt import Confirm, Prompt
+from rich.table import Table
+from rich.tree import Tree
+
+from .hasher import DuplicateGroup, ImageHasher, SUPPORTED_EXTENSIONS
+from .presets import CONFIG_FILE, PRESETS_FILE, PresetManager
+from .processor import (
+    BatchStats,
+    ErrorCategory,
+    ProcessResult,
+    ProcessTask,
+    batch_process,
+    read_exif_tags,
+    scan_input_directory,
+    write_errors_log,
+)
+
+app = typer.Typer(
+    name="picflow",
+    help="电商商品图片批量处理工具 - 智能裁剪、统一调色、WebP转换、自动重命名",
+    add_completion=False,
+    no_args_is_help=True,
+)
+
+console = Console()
+err_console = Console(stderr=True)
+
+
+def _banner() -> None:
+    console.print(
+        Panel.fit(
+            "[bold cyan]PicFlow[/bold cyan] - 电商图片批量处理工具\n"
+            "[dim]智能裁剪 · 统一调色 · WebP转换 · 自动重命名 · 去重检测[/dim]",
+            border_style="cyan",
+        )
+    )
+
+
+@app.command("init")
+def cmd_init(
+    force: bool = typer.Option(False, "--force", "-f", help="覆盖已有配置"),
+) -> None:
+    """初始化 ~/.picflow 配置目录与默认配置"""
+    _banner()
+    pm = PresetManager()
+    created = pm.init_config(force=force)
+    if created:
+        console.print(f"[green]✓[/green] 配置已初始化: {CONFIG_FILE}")
+        console.print(f"[green]✓[/green] 预设目录: {PRESETS_FILE.parent}")
+    else:
+        console.print("[yellow]![/yellow] 配置已存在，使用 --force 覆盖")
+    raise typer.Exit(0)
+
+
+config_app = typer.Typer(help="配置管理")
+app.add_typer(config_app, name="config")
+
+
+@config_app.command("init")
+def config_init(
+    force: bool = typer.Option(False, "--force", "-f"),
+) -> None:
+    """初始化配置文件"""
+    cmd_init(force=force)
+
+
+@config_app.command("show")
+def config_show() -> None:
+    """显示当前所有配置参数"""
+    pm = PresetManager()
+    cfg = pm.get_config()
+
+    table = Table(title="当前配置", show_lines=False, header_style="cyan")
+    table.add_column("参数", style="bold")
+    table.add_column("值")
+
+    def _add_rows(data: Dict[str, Any], prefix: str = "") -> None:
+        for k, v in data.items():
+            key = f"{prefix}.{k}" if prefix else k
+            if isinstance(v, dict):
+                _add_rows(v, key)
+            else:
+                table.add_row(key, str(v))
+
+    _add_rows(cfg)
+    console.print(table)
+
+    preset_table = Table(title="可用 Presets", show_lines=False, header_style="magenta")
+    preset_table.add_column("名称", style="bold")
+    preset_table.add_column("显示名")
+    preset_table.add_column("来源")
+    preset_table.add_column("描述")
+    for p in pm.list_presets():
+        src_style = "green" if p["source"] == "builtin" else "yellow"
+        preset_table.add_row(
+            p["name"], p["display_name"], f"[{src_style}]{p['source']}[/{src_style}]", p["description"]
+        )
+    console.print(preset_table)
+
+
+@config_app.command("set")
+def config_set(
+    key: str = typer.Argument(..., help="配置键，例如 workers 或 logging.level"),
+    value: str = typer.Argument(..., help="配置值"),
+) -> None:
+    """设置配置项"""
+    pm = PresetManager()
+    try:
+        parsed: Any = value
+        if value.lower() in ("true", "false"):
+            parsed = value.lower() == "true"
+        elif value.isdigit():
+            parsed = int(value)
+        elif value.replace(".", "", 1).isdigit():
+            parsed = float(value)
+        pm.set_config(key, parsed)
+        console.print(f"[green]✓[/green] {key} = {parsed}")
+    except Exception as e:
+        err_console.print(f"[red]✗[/red] 设置失败: {e}")
+        raise typer.Exit(1)
+
+
+@config_app.command("get")
+def config_get(
+    key: str = typer.Argument(..., help="配置键"),
+) -> None:
+    """读取配置项"""
+    pm = PresetManager()
+    val = pm.get_config(key)
+    if val is None:
+        err_console.print(f"[red]✗[/red] 键不存在: {key}")
+        raise typer.Exit(1)
+    if isinstance(val, (dict, list)):
+        console.print_json(json.dumps(val, ensure_ascii=False, indent=2))
+    else:
+        console.print(f"{key} = [cyan]{val}[/cyan]")
+
+
+@config_app.command("preset-add")
+def config_preset_add(
+    name: str = typer.Argument(..., help="Preset名称"),
+    json_file: Path = typer.Argument(..., exists=True, readable=True, help="JSON配置文件路径"),
+) -> None:
+    """从JSON文件添加自定义preset"""
+    pm = PresetManager()
+    try:
+        with open(json_file, "r", encoding="utf-8") as f:
+            preset = json.load(f)
+        pm.add_preset(name, preset)
+        console.print(f"[green]✓[/green] Preset '{name}' 已添加")
+    except Exception as e:
+        err_console.print(f"[red]✗[/red] 添加失败: {e}")
+        raise typer.Exit(1)
+
+
+@config_app.command("preset-remove")
+def config_preset_remove(
+    name: str = typer.Argument(..., help="Preset名称"),
+) -> None:
+    """删除自定义preset"""
+    pm = PresetManager()
+    if pm.remove_preset(name):
+        console.print(f"[green]✓[/green] Preset '{name}' 已删除")
+    else:
+        err_console.print(f"[red]✗[/red] Preset '{name}' 不存在或为内置预设")
+        raise typer.Exit(1)
+
+
+@config_app.command("preset-export")
+def config_preset_export(
+    name: str = typer.Argument(..., help="Preset名称"),
+    output: Path = typer.Option(Path("preset_export.json"), "--output", "-o", help="导出路径"),
+) -> None:
+    """导出preset为JSON文件（可分享）"""
+    pm = PresetManager()
+    if pm.export_preset(name, output):
+        console.print(f"[green]✓[/green] 已导出到: {output}")
+    else:
+        err_console.print(f"[red]✗[/red] Preset '{name}' 不存在")
+        raise typer.Exit(1)
+
+
+@config_app.command("preset-import")
+def config_preset_import(
+    input: Path = typer.Argument(..., exists=True, readable=True, help="导入文件路径"),
+) -> None:
+    """从JSON文件导入preset"""
+    pm = PresetManager()
+    imported = pm.import_presets(input)
+    if imported:
+        console.print(f"[green]✓[/green] 成功导入 {len(imported)} 个 preset: {', '.join(imported)}")
+    else:
+        console.print("[yellow]![/yellow] 没有导入新的 preset（可能名称冲突或文件为空）")
+
+
+@app.command("process")
+def cmd_process(
+    input_dir: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, readable=True, help="输入图片目录"),
+    output_dir: Optional[Path] = typer.Option(None, "--output", "-o", help="输出目录（默认在输入目录下创建_processed）"),
+    preset: str = typer.Option(..., "--preset", "-p", help="处理预设: taobao/jd/independent 或自定义"),
+    workers: Optional[int] = typer.Option(None, "--workers", "-w", help="并行进程数"),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="只打印操作，不实际处理"),
+    recursive: bool = typer.Option(True, "--recursive/--no-recursive", "-r/-R", help="递归扫描子目录"),
+    overwrite: bool = typer.Option(False, "--overwrite", help="覆盖已存在的文件"),
+    skip_hash: bool = typer.Option(False, "--skip-hash", help="跳过重复检测"),
+    brand: str = typer.Option("BRAND", "--brand", help="SKU品牌字段"),
+    category: str = typer.Option("", "--category", help="SKU品类字段"),
+    color: str = typer.Option("", "--color", help="SKU颜色字段"),
+    sample_image: Optional[Path] = typer.Option(None, "--sample", help="抽检样图路径（每隔N张插入）"),
+    hash_threshold: Optional[int] = typer.Option(None, "--hash-threshold", help="汉明距离阈值"),
+) -> None:
+    """批量处理图片（核心命令）"""
+    _banner()
+
+    pm = PresetManager()
+    preset_cfg = pm.get_preset(preset)
+    if preset_cfg is None:
+        err_console.print(f"[red]✗[/red] Preset '{preset}' 不存在。可用: {[p['name'] for p in pm.list_presets()]}")
+        raise typer.Exit(1)
+
+    global_cfg = pm.get_config()
+    workers = workers or global_cfg.get("workers", 4)
+    hash_threshold = hash_threshold or global_cfg.get("hash_threshold", 8)
+
+    if output_dir is None:
+        output_dir = input_dir.parent / f"{input_dir.name}_processed"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    console.print(f"[cyan]→[/cyan] 输入目录: {input_dir}")
+    console.print(f"[cyan]→[/cyan] 输出目录: {output_dir}")
+    console.print(f"[cyan]→[/cyan] 预设: [bold]{preset_cfg.get('name', preset)}[/bold]")
+    console.print(f"[cyan]→[/cyan] 并行进程: {workers}")
+    if dry_run:
+        console.print("[yellow]⚠ Dry-run 模式，不实际处理文件[/yellow]")
+
+    scanned = scan_input_directory(input_dir, recursive=recursive)
+    if not scanned:
+        err_console.print(f"[red]✗[/red] 未找到支持的图片文件（支持: {', '.join(sorted(SUPPORTED_EXTENSIONS))}）")
+        raise typer.Exit(1)
+
+    console.print(f"[cyan]→[/cyan] 发现图片: [bold]{len(scanned)}[/bold] 张")
+
+    skip_paths: set = set()
+    if not skip_hash:
+        hasher = ImageHasher(threshold=hash_threshold)
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("{task.completed}/{task.total}"),
+            console=console,
+            transient=True,
+        ) as progress:
+            task_id = progress.add_task("计算感知哈希...", total=len(scanned))
+
+            def _hash_cb(idx: int, total: int, path: Path) -> None:
+                progress.update(task_id, advance=1, description=f"计算哈希: {path.name[:40]}")
+
+            hash_infos = hasher.scan_directory(
+                input_dir, recursive=recursive, progress_callback=_hash_cb
+            )
+
+        console.print(f"[cyan]→[/cyan] 哈希计算完成: {len(hash_infos)} 张有效")
+
+        dup_pairs = []
+        if len(hash_infos) > 1:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("{task.completed}/{task.total}"),
+                console=console,
+                transient=True,
+            ) as progress:
+                task_id = progress.add_task("检测重复...", total=len(hash_infos))
+
+                def _dup_cb(idx: int, total: int) -> None:
+                    progress.update(task_id, completed=idx)
+
+                dup_pairs = hasher.find_duplicates(hash_infos, progress_callback=_dup_cb)
+
+        if dup_pairs:
+            groups = hasher.group_duplicates(dup_pairs)
+            console.print(f"[yellow]⚠[/yellow] 发现 [bold]{len(groups)}[/bold] 组重复图片，共 [bold]{len(dup_pairs)}[/bold] 对")
+
+            table = Table(title="重复分组（推荐保留）", show_lines=False, header_style="yellow")
+            table.add_column("#", style="bold", justify="right")
+            table.add_column("推荐保留", style="green")
+            table.add_column("重复数")
+            table.add_column("平均距离")
+            for i, g in enumerate(groups[:20], 1):
+                avg_d = int(sum(g.distances) / len(g.distances)) if g.distances else 0
+                table.add_row(
+                    str(i),
+                    f"{g.images[g.keep_index].path.name} ({g.images[g.keep_index].resolution[0]}x{g.images[g.keep_index].resolution[1]})",
+                    str(len(g.images)),
+                    str(avg_d),
+                )
+            if len(groups) > 20:
+                table.add_row("...", f"(还有 {len(groups) - 20} 组)", "", "")
+            console.print(table)
+
+            skip = Confirm.ask("是否[bold]跳过[/bold]重复项，只处理推荐保留的图片?", default=True)
+            if skip:
+                skip_paths = hasher.get_skip_set(dup_pairs)
+                console.print(f"[green]✓[/green] 将跳过 [bold]{len(skip_paths)}[/bold] 张重复图片")
+            else:
+                console.print("[yellow]![/yellow] 将处理所有图片（包括重复项）")
+
+    tasks: List[ProcessTask] = []
+    idx = preset_cfg.get("rename", {}).get("start_index", 1)
+    for abs_path, rel_path in scanned:
+        if abs_path in skip_paths:
+            continue
+        task = ProcessTask(
+            input_path=abs_path,
+            rel_path=rel_path,
+            output_dir=output_dir,
+            index=idx,
+            sku_fields={"brand": brand, "category": category, "color": color},
+        )
+        tasks.append(task)
+        idx += 1
+
+    if not tasks:
+        console.print("[yellow]![/yellow] 没有需要处理的图片")
+        raise typer.Exit(0)
+
+    sample_cfg = preset_cfg.get("quality_check", {})
+    if sample_image and sample_image.exists():
+        from .processor import insert_sample_markers
+        tasks = insert_sample_markers(tasks, sample_cfg, sample_image)
+        console.print(f"[cyan]→[/cyan] 将插入抽检样图: 每 {sample_cfg.get('sample_interval', 20)} 张")
+
+    console.print(f"[cyan]→[/cyan] 开始处理 [bold]{len(tasks)}[/bold] 张图片")
+
+    stats: BatchStats = BatchStats()
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        TextColumn("·"),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task_id = progress.add_task("处理中...", total=len(tasks))
+
+        def _prog_cb(result: ProcessResult, done: int, total: int) -> None:
+            name = result.input_path.name
+            dur = f"{result.duration_ms}ms"
+            if result.skipped:
+                status = f"[yellow]跳过 {name}[/yellow] ({dur})"
+            elif result.success:
+                status = f"[green]✓ {name}[/green] ({dur})"
+            else:
+                status = f"[red]✗ {name}[/red] ({result.error.category.value if result.error else 'err'})"
+            progress.update(task_id, completed=done, description=status)
+
+        stats = batch_process(
+            tasks=tasks,
+            preset=preset_cfg,
+            workers=workers,
+            keep_structure=global_cfg.get("keep_original_structure", True),
+            overwrite=overwrite,
+            dry_run=dry_run,
+            progress_callback=_prog_cb,
+        )
+
+    _print_stats(stats, output_dir, global_cfg.get("error_log", "errors.log"))
+
+
+def _print_stats(stats: BatchStats, output_dir: Path, error_log_name: str) -> None:
+    console.print()
+    table = Table(title="处理结果汇总", show_header=False, header_style="cyan", box=None)
+    table.add_column(style="bold", width=15)
+    table.add_column()
+    table.add_row("总数", str(stats.total))
+    table.add_row("成功", f"[green]{stats.success}[/green]")
+    table.add_row("失败", f"[red]{stats.failed}[/red]")
+    if stats.skipped:
+        table.add_row("跳过", f"[yellow]{stats.skipped}[/yellow]")
+    table.add_row("总耗时", f"{stats.duration_ms / 1000:.1f}s")
+    if stats.total > 0:
+        table.add_row("平均速度", f"{stats.duration_ms / max(stats.total, 1):.0f}ms/张")
+    console.print(table)
+
+    if stats.errors:
+        err_table = Table(title="错误分类统计", header_style="red", show_lines=False)
+        err_table.add_column("分类", style="bold")
+        err_table.add_column("数量", justify="right")
+        for cat, count in sorted(stats.error_counts.items(), key=lambda x: -x[1]):
+            err_table.add_row(cat.value, str(count))
+        console.print(err_table)
+
+        log_path = output_dir / error_log_name
+        write_errors_log(stats.errors, log_path)
+        console.print(f"[red]✗[/red] 详细错误日志: {log_path}")
+
+    console.print(f"\n[cyan]→[/cyan] 输出目录: {output_dir}")
+
+
+hash_app = typer.Typer(help="图片去重检测")
+app.add_typer(hash_app, name="hash")
+
+
+@hash_app.command("scan")
+def hash_scan(
+    directory: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True),
+    threshold: int = typer.Option(8, "--threshold", "-t", help="汉明距离阈值（越小越严格）"),
+    action: str = typer.Option("report", "--action", "-a", help="report: 只报告 | link: 软链接归集到 dupes/ | move: 复制归集"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="归集输出目录（默认与输入同）"),
+    recursive: bool = typer.Option(True, "--recursive/--no-recursive", "-r/-R"),
+) -> None:
+    """扫描目录检测重复图片"""
+    _banner()
+
+    hasher = ImageHasher(threshold=threshold)
+    console.print(f"[cyan]→[/cyan] 扫描目录: {directory}")
+    console.print(f"[cyan]→[/cyan] 汉明距离阈值: {threshold}")
+    console.print(f"[cyan]→[/cyan] 操作: {action}")
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        console=console,
+        transient=True,
+    ) as progress:
+        task_id = progress.add_task("计算哈希...", total=1)
+
+        def _cb(idx: int, total: int, path: Path) -> None:
+            progress.update(task_id, total=total, completed=idx, description=f"哈希: {path.name[:40]}")
+
+        hash_infos = hasher.scan_directory(directory, recursive=recursive, progress_callback=_cb)
+
+    console.print(f"[cyan]→[/cyan] 计算完成: {len(hash_infos)} 张")
+
+    if len(hash_infos) < 2:
+        console.print("[yellow]![/yellow] 图片太少，无法比较")
+        raise typer.Exit(0)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        console=console,
+        transient=True,
+    ) as progress:
+        task_id = progress.add_task("比对重复...", total=len(hash_infos))
+
+        def _cb2(idx: int, total: int) -> None:
+            progress.update(task_id, completed=idx)
+
+        pairs = hasher.find_duplicates(hash_infos, progress_callback=_cb2)
+
+    if not pairs:
+        console.print("[green]✓[/green] 未发现重复图片")
+        raise typer.Exit(0)
+
+    groups = hasher.group_duplicates(pairs)
+    console.print(f"[yellow]⚠[/yellow] 发现 [bold]{len(groups)}[/bold] 组重复，涉及 [bold]{sum(len(g.images) for g in groups)}[/bold] 张")
+
+    table = Table(title="重复分组详情", show_lines=False, header_style="yellow")
+    table.add_column("#", style="bold", justify="right")
+    table.add_column("推荐保留", style="green")
+    table.add_column("分辨率")
+    table.add_column("评分", justify="right")
+    table.add_column("重复数", justify="right")
+    for i, g in enumerate(groups, 1):
+        keep = g.images[g.keep_index]
+        table.add_row(
+            str(i),
+            keep.path.name,
+            f"{keep.resolution[0]}x{keep.resolution[1]}",
+            f"{keep.score:.3f}",
+            str(len(g.images)),
+        )
+    console.print(table)
+
+    if action == "report":
+        return
+
+    out_dir = output or directory
+    use_symlinks = action == "link"
+
+    if Confirm.ask(f"确认将重复文件{'软链接' if use_symlinks else '复制'}到 {out_dir / 'dupes'} ?", default=True):
+        stats2 = hasher.organize_duplicates(groups, out_dir, use_symlinks=use_symlinks)
+        console.print(
+            f"[green]✓[/green] 完成: {stats2['groups']} 组, "
+            f"软链接 {stats2['linked']} 个, 复制 {stats2['moved']} 个"
+        )
+
+
+exif_app = typer.Typer(help="EXIF信息查看")
+app.add_typer(exif_app, name="exif")
+
+
+@exif_app.command("show")
+def exif_show(
+    image: Path = typer.Argument(..., exists=True, file_okay=True, dir_okay=False, readable=True),
+    save: Optional[Path] = typer.Option(None, "--save", "-s", help="保存为JSON"),
+) -> None:
+    """查看图片EXIF信息"""
+    tags = read_exif_tags(image)
+    if not tags:
+        console.print("[yellow]![/yellow] 未找到EXIF信息")
+        return
+
+    table = Table(title=f"EXIF: {image.name}", show_lines=False, header_style="magenta")
+    table.add_column("标签", style="bold")
+    table.add_column("值")
+    for k, v in tags.items():
+        val_str = str(v)
+        if len(val_str) > 80:
+            val_str = val_str[:77] + "..."
+        table.add_row(k, val_str)
+    console.print(table)
+
+    if save:
+        with open(save, "w", encoding="utf-8") as f:
+            json.dump(tags, f, ensure_ascii=False, indent=2)
+        console.print(f"[green]✓[/green] 已保存到: {save}")
+
+
+def main() -> None:
+    try:
+        app()
+    except typer.Exit:
+        raise
+    except KeyboardInterrupt:
+        err_console.print("\n[yellow]![/yellow] 操作已取消")
+        sys.exit(130)
+    except Exception as e:
+        err_console.print(f"\n[red]✗[/red] 未处理的异常: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

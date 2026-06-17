@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "picflow"
+version = "0.1.0"
+description = "电商商品图片批量处理工具 - 智能裁剪、统一调色、WebP转换、自动重命名"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "PicFlow Team" }]
+license = { text = "MIT" }
+dependencies = [
+    "pillow>=10.0.0",
+    "opencv-python-headless>=4.8.0",
+    "imagehash>=4.3.1",
+    "exifread>=3.0.0",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "python-dotenv>=1.0.0",
+    "numpy>=1.24.0",
+]
+
+[project.scripts]
+picflow = "picflow.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["picflow*"]
