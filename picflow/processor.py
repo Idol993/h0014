@@ -42,6 +42,9 @@ class ProcessTask:
     index: int
     sku_fields: Dict[str, str] = field(default_factory=dict)
     extra_sizes: Optional[List[Dict[str, Any]]] = None
+    sku_group_dir: Optional[Path] = None
+    is_sample: bool = False
+    sample_position: str = ""
 
 
 @dataclass
@@ -431,6 +434,13 @@ def process_single_image(
         if task.input_path.suffix.lower() not in SUPPORTED_INPUT:
             raise ValueError(f"不支持的文件格式: {task.input_path.suffix}")
 
+        def _resolve_out_dir() -> Path:
+            if task.sku_group_dir is not None:
+                return task.sku_group_dir
+            if keep_structure:
+                return task.output_dir / task.rel_path.parent
+            return task.output_dir
+
         if dry_run:
             sizes = preset.get("sizes", [])
             rename_cfg = preset.get("rename", {})
@@ -439,11 +449,11 @@ def process_single_image(
             template = rename_cfg.get("template", "{brand}_{category}_{color}_{index}")
             out_fmt = preset.get("output", {}).get("format", "webp")
             out_quality = preset.get("output", {}).get("quality", 75)
+            out_dir = _resolve_out_dir()
             for sz in sizes:
                 fname = _generate_filename(
                     template, sku, task.index, padding, sz.get("suffix", "")
                 ) + f".{out_fmt}"
-                out_dir = task.output_dir / task.rel_path.parent if keep_structure else task.output_dir
                 result.output_paths.append(out_dir / fname)
                 result.dry_run_details.append({
                     "size_name": sz.get("name", ""),
@@ -460,7 +470,6 @@ def process_single_image(
                     fname = _generate_filename(
                         template, sku, task.index, padding, sz.get("suffix", "")
                     ) + f".{out_fmt}"
-                    out_dir = task.output_dir / task.rel_path.parent if keep_structure else task.output_dir
                     result.output_paths.append(out_dir / fname)
                     result.dry_run_details.append({
                         "size_name": sz.get("name", "extra"),
@@ -499,9 +508,9 @@ def process_single_image(
         out_fmt = out_cfg.get("format", "webp").lower()
         quality = out_cfg.get("quality", 75)
 
-        base_out_dir = task.output_dir
-        if keep_structure:
-            base_out_dir = task.output_dir / task.rel_path.parent
+        base_out_dir = task.sku_group_dir if task.sku_group_dir is not None else (
+            task.output_dir / task.rel_path.parent if keep_structure else task.output_dir
+        )
         base_out_dir.mkdir(parents=True, exist_ok=True)
 
         all_sizes = list(sizes)
@@ -594,30 +603,93 @@ def write_errors_log(errors: List[ProcessError], log_path: Path) -> None:
             f.write(f"堆栈:\n{err.stacktrace}\n\n")
 
 
+def _compute_sku_key(task: ProcessTask) -> str:
+    b = task.sku_fields.get("brand", "")
+    c = task.sku_fields.get("category", "")
+    cl = task.sku_fields.get("color", "")
+    parts = [p for p in [b, c, cl] if p]
+    if parts:
+        return "/".join(parts)
+    parts = list(task.rel_path.parent.parts)
+    if parts:
+        return "/".join(parts)
+    return "default"
+
+
 def insert_sample_markers(
     tasks: List[ProcessTask],
     sample_cfg: Dict[str, Any],
     sample_image_path: Optional[Path] = None,
+    sku_boundary: bool = True,
 ) -> List[ProcessTask]:
     interval = sample_cfg.get("sample_interval", 20)
-    if interval <= 0 or not sample_image_path:
+    if not sample_image_path:
+        return tasks
+    if interval <= 0 and not sku_boundary:
         return tasks
 
-    sample_filename = sample_cfg.get("sample_filename", "_SAMPLE.webp")
+    sku_groups: Dict[str, List[int]] = {}
+    for i, task in enumerate(tasks):
+        key = _compute_sku_key(task)
+        if key not in sku_groups:
+            sku_groups[key] = []
+        sku_groups[key].append(i)
+
+    sku_boundary_indices: Dict[int, str] = {}
+    if sku_boundary:
+        for key, indices in sku_groups.items():
+            if indices:
+                sku_boundary_indices[indices[0]] = "sku_start"
+                if indices[-1] != indices[0]:
+                    sku_boundary_indices[indices[-1]] = "sku_end"
+
     result: List[ProcessTask] = []
     for i, task in enumerate(tasks):
+        if i in sku_boundary_indices:
+            pos = sku_boundary_indices[i]
+            if pos == "sku_start":
+                result.append(_make_sample_task(
+                    sample_image_path, task.output_dir,
+                    task.sku_group_dir, pos,
+                ))
+
         result.append(task)
-        if (i + 1) % interval == 0 and i < len(tasks) - 1:
-            sample_task = ProcessTask(
-                input_path=sample_image_path,
-                rel_path=Path(sample_filename),
-                output_dir=task.output_dir,
-                index=0,
-                sku_fields={"brand": "SAMPLE", "category": "CHECK", "color": "REF"},
-                extra_sizes=[{"name": "sample", "width": 800, "height": 800, "suffix": ""}],
-            )
-            result.append(sample_task)
+
+        if i in sku_boundary_indices:
+            pos = sku_boundary_indices[i]
+            if pos == "sku_end":
+                result.append(_make_sample_task(
+                    sample_image_path, task.output_dir,
+                    task.sku_group_dir, pos,
+                ))
+                continue
+
+        if interval > 0 and (i + 1) % interval == 0 and i < len(tasks) - 1:
+            result.append(_make_sample_task(
+                sample_image_path, task.output_dir,
+                task.sku_group_dir, f"interval_{i+1}",
+            ))
+
     return result
+
+
+def _make_sample_task(
+    sample_image_path: Path,
+    output_dir: Path,
+    sku_group_dir: Optional[Path],
+    position: str,
+) -> ProcessTask:
+    return ProcessTask(
+        input_path=sample_image_path,
+        rel_path=Path("_SAMPLE.webp"),
+        output_dir=output_dir,
+        index=0,
+        sku_fields={"brand": "SAMPLE", "category": "CHECK", "color": "REF"},
+        extra_sizes=[{"name": "sample", "width": 800, "height": 800, "suffix": ""}],
+        sku_group_dir=sku_group_dir,
+        is_sample=True,
+        sample_position=position,
+    )
 
 
 def batch_process(

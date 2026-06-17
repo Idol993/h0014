@@ -1,19 +1,24 @@
 """PicFlow CLI入口 - 基于Typer构建的命令行界面
 
 验收命令示例:
-  1. hash直接入口:      picflow hash ./images --action link
-  2. hash-scan子命令:   picflow hash-scan scan ./images --threshold 10 --action report
-  3. 自定义尺寸处理:    picflow process ./raw --preset taobao --width 600 --height 600 --quality 85 --output ./done
-  4. 白平衡参考值覆盖:  picflow process ./raw --preset jd --white-reference 245,245,245
-  5. 自动抽检配置:      picflow config set sample_image_path ./ref.jpg
-                        picflow config set sample_interval 10
-                        picflow process ./raw --preset taobao --output ./done
-  6. 4进程并行处理:     picflow process ./raw --preset taobao --workers 4 --output ./done --skip-hash
-  7. dry-run预览:       picflow process ./raw --preset independent --dry-run
+  1. hash直接入口(非交互):  picflow hash ./images --action link --yes
+  2. hash-scan子命令:       picflow hash-scan scan ./images -t 10 -a report
+  3. 自定义尺寸处理:        picflow process ./raw --preset taobao --width 600 --height 600 --quality 85 -o ./done
+  4. 白平衡参考值覆盖:      picflow process ./raw --preset jd --white-reference 245,245,245
+  5. 自动抽检配置:          picflow config set sample_image_path ./ref.jpg
+                             picflow config set sample_interval 10
+                             picflow process ./raw --preset taobao -o ./done
+  6. 4进程并行处理:         picflow process ./raw --preset taobao --workers 4 -o ./done --skip-hash
+  7. dry-run预览:           picflow process ./raw --preset independent --dry-run
+  8. SKU分组输出:           picflow process ./raw --preset taobao --sku-group -o ./done
+  9. 增量处理(跳过未变):    picflow process ./raw --preset taobao --incremental -o ./done
+  10. 处理报告:             picflow report ./done
+  11. 报告导出CSV:          picflow report ./done --csv report.csv
 """
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -35,6 +40,7 @@ from rich.table import Table
 from rich.tree import Tree
 
 from .hasher import DuplicateGroup, ImageHasher, SUPPORTED_EXTENSIONS
+from .manifest import Manifest, ManifestEntry
 from .presets import CONFIG_FILE, PRESETS_FILE, PresetManager
 from .processor import (
     BatchStats,
@@ -46,6 +52,7 @@ from .processor import (
     scan_input_directory,
     write_errors_log,
     _update_stats,
+    _compute_sku_key,
 )
 
 app = typer.Typer(
@@ -55,8 +62,8 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
-console = Console()
-err_console = Console(stderr=True)
+console = Console(force_terminal=True)
+err_console = Console(stderr=True, force_terminal=True)
 
 
 def _banner() -> None:
@@ -246,6 +253,9 @@ def cmd_process(
     override_quality: Optional[int] = typer.Option(None, "--quality", help="覆盖preset的输出质量"),
     override_format: Optional[str] = typer.Option(None, "--format", help="覆盖preset的输出格式(如webp/jpg/png)"),
     override_white_ref: Optional[str] = typer.Option(None, "--white-reference", help="覆盖白平衡参考值，如 245,245,245"),
+    sku_group: bool = typer.Option(False, "--sku-group", help="按SKU分组到品牌/品类/颜色子目录"),
+    incremental: bool = typer.Option(False, "--incremental", help="增量处理：跳过未变化的已有输出"),
+    no_sku_boundary: bool = typer.Option(False, "--no-sku-boundary", help="不在每个SKU首尾插入抽检参考图"),
 ) -> None:
     """批量处理图片（核心命令）"""
     _banner()
@@ -301,6 +311,10 @@ def cmd_process(
     console.print(f"[cyan]→[/cyan] 输出目录: {output_dir}")
     console.print(f"[cyan]→[/cyan] 预设: [bold]{preset_cfg.get('name', preset)}[/bold]")
     console.print(f"[cyan]→[/cyan] 并行进程: {workers}")
+    if sku_group:
+        console.print(f"[cyan]→[/cyan] SKU分组: [bold]开启[/bold]（按品牌/品类/颜色子目录）")
+    if incremental:
+        console.print(f"[cyan]→[/cyan] 增量处理: [bold]开启[/bold]（跳过未变化文件）")
 
     final_sizes = preset_cfg.get("sizes", [])
     sizes_str = " / ".join(f'{s.get("name","")}{s["width"]}×{s["height"]}' for s in final_sizes)
@@ -389,17 +403,41 @@ def cmd_process(
             else:
                 console.print("[yellow]![/yellow] 将处理所有图片（包括重复项）")
 
+    incremental_skip: set = set()
+    if incremental and not dry_run:
+        old_manifest = Manifest.load(output_dir)
+        if old_manifest is not None:
+            old_manifest.build_skip_cache()
+            before = len(scanned)
+            scanned = [(p, r) for p, r in scanned if not old_manifest.should_skip(p)]
+            incremental_skip_count = before - len(scanned)
+            if incremental_skip_count > 0:
+                console.print(f"[cyan]→[/cyan] 增量跳过: [bold]{incremental_skip_count}[/bold] 张未变化文件")
+
     tasks: List[ProcessTask] = []
     idx = preset_cfg.get("rename", {}).get("start_index", 1)
     for abs_path, rel_path in scanned:
         if abs_path in skip_paths:
             continue
+        task_sku_fields = {"brand": brand, "category": category, "color": color}
+        sku_group_dir = None
+        if sku_group:
+            from .processor import _extract_sku_from_path
+            sku_resolved = _extract_sku_from_path(rel_path, task_sku_fields)
+            sku_key_parts = [sku_resolved.get("brand", ""), sku_resolved.get("category", ""), sku_resolved.get("color", "")]
+            sku_key_parts = [p for p in sku_key_parts if p]
+            if sku_key_parts:
+                sku_group_dir = output_dir / Path(*sku_key_parts)
+            else:
+                sku_group_dir = output_dir / rel_path.parent
+
         task = ProcessTask(
             input_path=abs_path,
             rel_path=rel_path,
             output_dir=output_dir,
             index=idx,
-            sku_fields={"brand": brand, "category": category, "color": color},
+            sku_fields=task_sku_fields,
+            sku_group_dir=sku_group_dir,
         )
         tasks.append(task)
         idx += 1
@@ -425,8 +463,16 @@ def cmd_process(
     if effective_sample_path and effective_sample_path.exists():
         sample_cfg = {**sample_cfg, "sample_interval": effective_interval}
         from .processor import insert_sample_markers
-        tasks = insert_sample_markers(tasks, sample_cfg, effective_sample_path)
-        console.print(f"[cyan]→[/cyan] 抽检样图: {effective_sample_path.name}，每 {effective_interval} 张插入")
+        tasks = insert_sample_markers(
+            tasks, sample_cfg, effective_sample_path,
+            sku_boundary=not no_sku_boundary,
+        )
+        mode_parts = []
+        if not no_sku_boundary:
+            mode_parts.append("SKU首尾")
+        if effective_interval > 0:
+            mode_parts.append(f"每{effective_interval}张")
+        console.print(f"[cyan]→[/cyan] 抽检样图: {effective_sample_path.name}（{' + '.join(mode_parts)}）")
     else:
         if effective_sample_path and not effective_sample_path.exists():
             console.print(f"[yellow]![/yellow] 抽检样图不存在: {effective_sample_path}")
@@ -434,23 +480,40 @@ def cmd_process(
     console.print(f"[cyan]→[/cyan] 开始处理 [bold]{len(tasks)}[/bold] 张图片")
 
     stats: BatchStats = BatchStats()
+    manifest = Manifest()
 
     if dry_run:
-        from .processor import process_single_image
+        from .processor import process_single_image, _extract_sku_from_path
         for t in tasks:
             result = process_single_image(t, preset_cfg, global_cfg.get("keep_original_structure", True), overwrite, True)
             _update_stats(stats, result)
+            is_sample = t.is_sample
+            sample_tag = ""
+            if is_sample:
+                pos_str = t.sample_position.replace("_", " ")
+                sample_tag = f"[magenta][抽检 {pos_str}][/magenta] "
+
             if result.dry_run_details:
-                is_sample = t.sku_fields.get("brand") == "SAMPLE"
-                tag = "[magenta][抽检][/magenta] " if is_sample else ""
                 for d in result.dry_run_details:
+                    sku_dir_str = ""
+                    if t.sku_group_dir:
+                        try:
+                            rel_sku = t.sku_group_dir.relative_to(output_dir)
+                            sku_dir_str = f" → [blue]{rel_sku}[/blue]/"
+                        except ValueError:
+                            sku_dir_str = f" → [blue]{t.sku_group_dir}[/blue]/"
                     console.print(
-                        f"  {tag}{result.input_path.name} → "
+                        f"  {sample_tag}{result.input_path.name}{sku_dir_str}"
                         f"{d['filename']}  [{d['width']}×{d['height']}] "
                         f"{d['format']} q={d['quality']}"
                     )
         _print_stats(stats, output_dir, global_cfg.get("error_log", "errors.log"))
         return
+
+    results_list: List[ProcessResult] = []
+
+    def _collect_result(result: ProcessResult, done: int, total: int) -> None:
+        results_list.append(result)
 
     with Progress(
         SpinnerColumn(),
@@ -465,6 +528,7 @@ def cmd_process(
         task_id = progress.add_task("处理中...", total=len(tasks))
 
         def _prog_cb(result: ProcessResult, done: int, total: int) -> None:
+            _collect_result(result, done, total)
             name = result.input_path.name
             dur = f"{result.duration_ms}ms"
             if result.skipped:
@@ -479,11 +543,48 @@ def cmd_process(
             tasks=tasks,
             preset=preset_cfg,
             workers=workers,
-            keep_structure=global_cfg.get("keep_original_structure", True),
+            keep_structure=global_cfg.get("keep_original_structure", True) and not sku_group,
             overwrite=overwrite,
             dry_run=False,
             progress_callback=_prog_cb,
         )
+
+    out_fmt = preset_cfg.get("output", {}).get("format", "webp")
+    out_quality = preset_cfg.get("output", {}).get("quality", 75)
+    final_sizes = preset_cfg.get("sizes", [])
+
+    for i, result in enumerate(results_list):
+        t = tasks[i] if i < len(tasks) else None
+        if t is None:
+            continue
+        sku_key = _compute_sku_key(t)
+        sku_dir = str(t.sku_group_dir) if t.sku_group_dir else ""
+        sizes_info = []
+        if result.dry_run_details:
+            sizes_info = result.dry_run_details
+        elif result.success:
+            for sz in (final_sizes + (t.extra_sizes or [])):
+                sizes_info.append({"name": sz.get("name", ""), "width": sz["width"], "height": sz["height"], "suffix": sz.get("suffix", "")})
+
+        manifest.add_entry(
+            input_path=t.input_path,
+            output_paths=result.output_paths,
+            sizes=sizes_info,
+            fmt=out_fmt,
+            quality=out_quality,
+            duration_ms=result.duration_ms,
+            is_sample=t.is_sample,
+            sample_position=t.sample_position,
+            success=result.success,
+            error_category=result.error.category.value if result.error else "",
+            error_message=result.error.message if result.error else "",
+            sku_key=sku_key,
+            sku_dir=sku_dir,
+        )
+
+    manifest.finalize(preset, input_dir, output_dir, stats.duration_ms)
+    manifest_path = manifest.save(output_dir)
+    console.print(f"[cyan]→[/cyan] 处理清单: {manifest_path}")
 
     _print_stats(stats, output_dir, global_cfg.get("error_log", "errors.log"))
 
@@ -524,6 +625,7 @@ def _hash_scan_impl(
     action: str = "report",
     output: Optional[Path] = None,
     recursive: bool = True,
+    yes: bool = False,
 ) -> None:
     hasher = ImageHasher(threshold=threshold)
     console.print(f"[cyan]→[/cyan] 扫描目录: {directory}")
@@ -596,7 +698,10 @@ def _hash_scan_impl(
     out_dir = output or directory
     use_symlinks = action == "link"
 
-    if Confirm.ask(f"确认将重复文件{'软链接' if use_symlinks else '复制'}到 {out_dir / 'dupes'} ?", default=True):
+    should_proceed = yes or Confirm.ask(
+        f"确认将重复文件{'软链接' if use_symlinks else '复制'}到 {out_dir / 'dupes'} ?", default=True
+    )
+    if should_proceed:
         stats2 = hasher.organize_duplicates(groups, out_dir, use_symlinks=use_symlinks)
         console.print(
             f"[green]✓[/green] 完成: {stats2['groups']} 组, "
@@ -611,10 +716,11 @@ def cmd_hash(
     action: str = typer.Option("report", "--action", "-a", help="report: 只报告 | link: 软链接归集到 dupes/ | move: 复制归集"),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="归集输出目录（默认与输入同）"),
     recursive: bool = typer.Option(True, "--recursive/--no-recursive", "-r/-R"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="跳过交互确认，直接执行归集（适合脚本）"),
 ) -> None:
     """扫描目录检测重复图片（直接入口）"""
     _banner()
-    _hash_scan_impl(directory, threshold, action, output, recursive)
+    _hash_scan_impl(directory, threshold, action, output, recursive, yes)
 
 
 hash_app = typer.Typer(help="图片去重检测（子命令组）")
@@ -636,10 +742,104 @@ def hash_scan(
     action: str = typer.Option("report", "--action", "-a", help="report: 只报告 | link: 软链接归集到 dupes/ | move: 复制归集"),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="归集输出目录（默认与输入同）"),
     recursive: bool = typer.Option(True, "--recursive/--no-recursive", "-r/-R"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="跳过交互确认，直接执行归集（适合脚本）"),
 ) -> None:
     """扫描目录检测重复图片"""
     _banner()
-    _hash_scan_impl(directory, threshold, action, output, recursive)
+    _hash_scan_impl(directory, threshold, action, output, recursive, yes)
+
+
+@app.command("report")
+def cmd_report(
+    output_dir: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, readable=True, help="输出目录（含manifest.json）"),
+    csv_path: Optional[Path] = typer.Option(None, "--csv", "-c", help="导出CSV文件路径"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="显示每张文件详情"),
+) -> None:
+    """读取 manifest 和 errors.log，汇总处理结果，可导出 CSV"""
+    _banner()
+
+    manifest = Manifest.load(output_dir)
+    if manifest is None:
+        err_console.print(f"[red]✗[/red] 未找到 {output_dir / Manifest.FILENAME}，请先运行 picflow process")
+        raise typer.Exit(1)
+
+    summary = manifest.get_summary()
+
+    console.print(f"[cyan]→[/cyan] 输出目录: {output_dir}")
+    console.print(f"[cyan]→[/cyan] 处理时间: {manifest.meta.created_at}")
+    console.print(f"[cyan]→[/cyan] 使用预设: {manifest.meta.preset}")
+
+    main_table = Table(title="处理结果汇总", show_header=False, header_style="cyan", box=None)
+    main_table.add_column(style="bold", width=18)
+    main_table.add_column()
+    main_table.add_row("输入图片", str(summary["total_input"]))
+    main_table.add_row("成功", f"[green]{summary['total_success']}[/green]")
+    main_table.add_row("失败", f"[red]{summary['total_failed']}[/red]")
+    main_table.add_row("抽检图", f"[magenta]{summary['total_samples']}[/magenta]")
+    main_table.add_row("输出文件数", str(summary["total_output_files"]))
+    main_table.add_row("总耗时", f"{summary['total_duration_ms'] / 1000:.1f}s")
+    console.print(main_table)
+
+    if summary["sku_counts"]:
+        sku_table = Table(title="SKU分组统计", header_style="blue", show_lines=False)
+        sku_table.add_column("SKU", style="bold")
+        sku_table.add_column("图片数", justify="right")
+        for sku_key, count in sorted(summary["sku_counts"].items(), key=lambda x: -x[1]):
+            sku_table.add_row(sku_key, str(count))
+        console.print(sku_table)
+
+    if summary["size_counts"]:
+        size_table = Table(title="输出尺寸统计", header_style="green", show_lines=False)
+        size_table.add_column("尺寸", style="bold")
+        size_table.add_column("数量", justify="right")
+        for size_key, count in sorted(summary["size_counts"].items(), key=lambda x: -x[1]):
+            size_table.add_row(size_key, str(count))
+        console.print(size_table)
+
+    if summary["error_counts"]:
+        err_table = Table(title="错误分类统计", header_style="red", show_lines=False)
+        err_table.add_column("分类", style="bold")
+        err_table.add_column("数量", justify="right")
+        for cat, count in sorted(summary["error_counts"].items(), key=lambda x: -x[1]):
+            err_table.add_row(cat, str(count))
+        console.print(err_table)
+
+    if summary["sample_positions"]:
+        sample_table = Table(title="抽检图插入位置", header_style="magenta", show_lines=False)
+        sample_table.add_column("#", justify="right")
+        sample_table.add_column("位置")
+        for i, pos in enumerate(summary["sample_positions"], 1):
+            sample_table.add_row(str(i), pos)
+        console.print(sample_table)
+
+    if verbose:
+        detail_table = Table(title="逐文件详情", show_lines=False, header_style="dim")
+        detail_table.add_column("输入", style="bold", max_width=40)
+        detail_table.add_column("SKU目录", max_width=25)
+        detail_table.add_column("状态", max_width=8)
+        detail_table.add_column("耗时", justify="right", max_width=8)
+        detail_table.add_column("抽检", max_width=10)
+        for e in manifest.entries:
+            input_name = Path(e.input_path).name
+            sku_short = ""
+            if e.sku_dir:
+                try:
+                    sku_short = str(Path(e.sku_dir).relative_to(manifest.meta.output_dir))
+                except ValueError:
+                    sku_short = e.sku_dir
+            status = "[green]✓[/green]" if e.success else f"[red]✗ {e.error_category}[/red]"
+            dur = f"{e.duration_ms}ms"
+            sample_str = e.sample_position if e.is_sample else ""
+            detail_table.add_row(input_name, sku_short, status, dur, sample_str)
+        console.print(detail_table)
+
+    if csv_path:
+        csv_path = manifest.export_csv(csv_path)
+        console.print(f"[green]✓[/green] CSV已导出: {csv_path}")
+
+    error_log = output_dir / "errors.log"
+    if error_log.exists():
+        console.print(f"[dim]详细错误日志: {error_log}[/dim]")
 
 
 exif_app = typer.Typer(help="EXIF信息查看")
@@ -674,6 +874,13 @@ def exif_show(
 
 
 def main() -> None:
+    if sys.platform == "win32":
+        os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     try:
         app()
     except typer.Exit:
