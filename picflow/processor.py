@@ -662,7 +662,6 @@ def insert_sample_markers(
                     sample_image_path, task.output_dir,
                     task.sku_group_dir, pos,
                 ))
-                continue
 
         if interval > 0 and (i + 1) % interval == 0 and i < len(tasks) - 1:
             result.append(_make_sample_task(

@@ -92,6 +92,59 @@ def cmd_init(
     raise typer.Exit(0)
 
 
+@app.command("hash")
+def cmd_hash(
+    directory: str = typer.Argument(..., help="要扫描的图片目录，或 'scan' 关键字（老写法：picflow hash scan ./images）"),
+    dir2: Optional[Path] = typer.Argument(None, exists=True, file_okay=False, dir_okay=True, help="当第一个参数是 'scan' 时，这里是真正的目录"),
+    threshold: int = typer.Option(8, "--threshold", "-t", help="汉明距离阈值（越小越严格）"),
+    action: str = typer.Option("report", "--action", "-a", help="report: 只报告 | link: 软链接归集到 dupes/ | move: 复制归集"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="归集输出目录（默认与输入同）"),
+    recursive: bool = typer.Option(True, "--recursive/--no-recursive", "-r/-R"),
+    yes: Optional[bool] = typer.Option(None, "--yes/-y", "--no-yes", help="跳过交互确认，--action link/move 时默认自动确认"),
+) -> None:
+    """扫描目录检测重复图片（直接入口：picflow hash ./images  或  老写法：picflow hash scan ./images）"""
+    _banner()
+    if directory == "scan":
+        if dir2 is None:
+            err_console.print("[red]✗[/red] 老写法 picflow hash scan <目录> 需要指定目录参数")
+            raise typer.Exit(1)
+        real_dir = dir2
+    else:
+        real_dir = Path(directory)
+        if not real_dir.exists() or not real_dir.is_dir():
+            err_console.print(f"[red]✗[/red] 目录不存在: {real_dir}")
+            raise typer.Exit(1)
+    auto_yes = yes if yes is not None else (action != "report")
+    _hash_scan_impl(real_dir, threshold, action, output, recursive, auto_yes)
+
+
+hash_app = typer.Typer(help="图片去重检测（子命令组）")
+app.add_typer(hash_app, name="hash-scan")
+
+
+@hash_app.callback(invoke_without_command=True)
+def hash_scan_main(
+    ctx: typer.Context,
+) -> None:
+    if ctx.invoked_subcommand is None:
+        console.print("[dim]使用 picflow hash-scan scan <目录> 或 picflow hash <目录>[/dim]")
+
+
+@hash_app.command("scan")
+def hash_scan(
+    directory: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True),
+    threshold: int = typer.Option(8, "--threshold", "-t", help="汉明距离阈值（越小越严格）"),
+    action: str = typer.Option("report", "--action", "-a", help="report: 只报告 | link: 软链接归集到 dupes/ | move: 复制归集"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="归集输出目录（默认与输入同）"),
+    recursive: bool = typer.Option(True, "--recursive/--no-recursive", "-r/-R"),
+    yes: Optional[bool] = typer.Option(None, "--yes/-y", "--no-yes", help="跳过交互确认，--action link/move 时默认自动确认"),
+) -> None:
+    """扫描目录检测重复图片"""
+    _banner()
+    auto_yes = yes if yes is not None else (action != "report")
+    _hash_scan_impl(directory, threshold, action, output, recursive, auto_yes)
+
+
 config_app = typer.Typer(help="配置管理")
 app.add_typer(config_app, name="config")
 
@@ -424,6 +477,7 @@ def cmd_process(
         if sku_group:
             from .processor import _extract_sku_from_path
             sku_resolved = _extract_sku_from_path(rel_path, task_sku_fields)
+            task_sku_fields = sku_resolved
             sku_key_parts = [sku_resolved.get("brand", ""), sku_resolved.get("category", ""), sku_resolved.get("color", "")]
             sku_key_parts = [p for p in sku_key_parts if p]
             if sku_key_parts:
@@ -709,44 +763,7 @@ def _hash_scan_impl(
         )
 
 
-@app.command("hash")
-def cmd_hash(
-    directory: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, help="要扫描的图片目录"),
-    threshold: int = typer.Option(8, "--threshold", "-t", help="汉明距离阈值（越小越严格）"),
-    action: str = typer.Option("report", "--action", "-a", help="report: 只报告 | link: 软链接归集到 dupes/ | move: 复制归集"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="归集输出目录（默认与输入同）"),
-    recursive: bool = typer.Option(True, "--recursive/--no-recursive", "-r/-R"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="跳过交互确认，直接执行归集（适合脚本）"),
-) -> None:
-    """扫描目录检测重复图片（直接入口）"""
-    _banner()
-    _hash_scan_impl(directory, threshold, action, output, recursive, yes)
-
-
-hash_app = typer.Typer(help="图片去重检测（子命令组）")
 app.add_typer(hash_app, name="hash-scan")
-
-
-@hash_app.callback(invoke_without_command=True)
-def hash_scan_main(
-    ctx: typer.Context,
-) -> None:
-    if ctx.invoked_subcommand is None:
-        console.print("[dim]使用 picflow hash-scan scan <目录> 或 picflow hash <目录>[/dim]")
-
-
-@hash_app.command("scan")
-def hash_scan(
-    directory: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True),
-    threshold: int = typer.Option(8, "--threshold", "-t", help="汉明距离阈值（越小越严格）"),
-    action: str = typer.Option("report", "--action", "-a", help="report: 只报告 | link: 软链接归集到 dupes/ | move: 复制归集"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="归集输出目录（默认与输入同）"),
-    recursive: bool = typer.Option(True, "--recursive/--no-recursive", "-r/-R"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="跳过交互确认，直接执行归集（适合脚本）"),
-) -> None:
-    """扫描目录检测重复图片"""
-    _banner()
-    _hash_scan_impl(directory, threshold, action, output, recursive, yes)
 
 
 @app.command("report")
