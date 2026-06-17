@@ -53,6 +53,7 @@ class ProcessResult:
     error: Optional[ProcessError] = None
     skipped: bool = False
     skip_reason: str = ""
+    dry_run_details: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -436,12 +437,41 @@ def process_single_image(
             sku = _extract_sku_from_path(task.rel_path, task.sku_fields)
             padding = rename_cfg.get("index_padding", 4)
             template = rename_cfg.get("template", "{brand}_{category}_{color}_{index}")
+            out_fmt = preset.get("output", {}).get("format", "webp")
+            out_quality = preset.get("output", {}).get("quality", 75)
             for sz in sizes:
                 fname = _generate_filename(
                     template, sku, task.index, padding, sz.get("suffix", "")
-                ) + f".{preset.get('output', {}).get('format', 'webp')}"
+                ) + f".{out_fmt}"
                 out_dir = task.output_dir / task.rel_path.parent if keep_structure else task.output_dir
                 result.output_paths.append(out_dir / fname)
+                result.dry_run_details.append({
+                    "size_name": sz.get("name", ""),
+                    "width": sz["width"],
+                    "height": sz["height"],
+                    "suffix": sz.get("suffix", ""),
+                    "filename": fname,
+                    "format": out_fmt,
+                    "quality": out_quality,
+                    "output_dir": str(out_dir),
+                })
+            if task.extra_sizes:
+                for sz in task.extra_sizes:
+                    fname = _generate_filename(
+                        template, sku, task.index, padding, sz.get("suffix", "")
+                    ) + f".{out_fmt}"
+                    out_dir = task.output_dir / task.rel_path.parent if keep_structure else task.output_dir
+                    result.output_paths.append(out_dir / fname)
+                    result.dry_run_details.append({
+                        "size_name": sz.get("name", "extra"),
+                        "width": sz["width"],
+                        "height": sz["height"],
+                        "suffix": sz.get("suffix", ""),
+                        "filename": fname,
+                        "format": out_fmt,
+                        "quality": out_quality,
+                        "output_dir": str(out_dir),
+                    })
             result.success = True
             result.skipped = True
             result.skip_reason = "dry-run"
@@ -520,7 +550,19 @@ def process_single_image(
 
 def _worker_wrapper(args: Tuple[ProcessTask, Dict, bool, bool, bool]) -> ProcessResult:
     task, preset, keep_structure, overwrite, dry_run = args
-    return process_single_image(task, preset, keep_structure, overwrite, dry_run)
+    try:
+        return process_single_image(task, preset, keep_structure, overwrite, dry_run)
+    except Exception as e:
+        return ProcessResult(
+            input_path=task.input_path,
+            success=False,
+            error=ProcessError(
+                path=task.input_path,
+                category=_classify_error(e),
+                message=str(e),
+                stacktrace=traceback.format_exc(),
+            ),
+        )
 
 
 def scan_input_directory(
@@ -588,7 +630,7 @@ def batch_process(
     progress_callback: Optional[Callable[[ProcessResult, int, int], None]] = None,
 ) -> BatchStats:
     import os
-    import multiprocessing as mp
+    import concurrent.futures
     import time
 
     stats = BatchStats(total=len(tasks))
@@ -607,12 +649,48 @@ def batch_process(
         worker_args = [
             (task, preset, keep_structure, overwrite, dry_run) for task in tasks
         ]
-        ctx = mp.get_context("spawn")
-        with ctx.Pool(processes=workers) as pool:
-            for idx, result in enumerate(pool.imap_unordered(_worker_wrapper, worker_args), 1):
+        completed = 0
+        try:
+            with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
+                future_to_idx = {
+                    executor.submit(_worker_wrapper, arg): i
+                    for i, arg in enumerate(worker_args)
+                }
+                for future in concurrent.futures.as_completed(future_to_idx):
+                    completed += 1
+                    try:
+                        result = future.result()
+                    except Exception as e:
+                        idx = future_to_idx[future]
+                        result = ProcessResult(
+                            input_path=tasks[idx].input_path,
+                            success=False,
+                            error=ProcessError(
+                                path=tasks[idx].input_path,
+                                category=_classify_error(e),
+                                message=str(e),
+                                stacktrace=traceback.format_exc(),
+                            ),
+                        )
+                    _update_stats(stats, result)
+                    if progress_callback:
+                        progress_callback(result, completed, len(tasks))
+        except Exception as e:
+            for i in range(completed, len(tasks)):
+                result = ProcessResult(
+                    input_path=tasks[i].input_path,
+                    success=False,
+                    error=ProcessError(
+                        path=tasks[i].input_path,
+                        category=_classify_error(e),
+                        message=f"进程池异常: {e}",
+                        stacktrace=traceback.format_exc(),
+                    ),
+                )
                 _update_stats(stats, result)
+                completed += 1
                 if progress_callback:
-                    progress_callback(result, idx, len(tasks))
+                    progress_callback(result, completed, len(tasks))
 
     stats.duration_ms = int((time.perf_counter() - start_time) * 1000)
     return stats

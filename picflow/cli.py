@@ -1,4 +1,16 @@
-"""PicFlow CLI入口 - 基于Typer构建的命令行界面"""
+"""PicFlow CLI入口 - 基于Typer构建的命令行界面
+
+验收命令示例:
+  1. hash直接入口:      picflow hash ./images --action link
+  2. hash-scan子命令:   picflow hash-scan scan ./images --threshold 10 --action report
+  3. 自定义尺寸处理:    picflow process ./raw --preset taobao --width 600 --height 600 --quality 85 --output ./done
+  4. 白平衡参考值覆盖:  picflow process ./raw --preset jd --white-reference 245,245,245
+  5. 自动抽检配置:      picflow config set sample_image_path ./ref.jpg
+                        picflow config set sample_interval 10
+                        picflow process ./raw --preset taobao --output ./done
+  6. 4进程并行处理:     picflow process ./raw --preset taobao --workers 4 --output ./done --skip-hash
+  7. dry-run预览:       picflow process ./raw --preset independent --dry-run
+"""
 from __future__ import annotations
 
 import json
@@ -33,6 +45,7 @@ from .processor import (
     read_exif_tags,
     scan_input_directory,
     write_errors_log,
+    _update_stats,
 )
 
 app = typer.Typer(
@@ -226,8 +239,13 @@ def cmd_process(
     brand: str = typer.Option("BRAND", "--brand", help="SKU品牌字段"),
     category: str = typer.Option("", "--category", help="SKU品类字段"),
     color: str = typer.Option("", "--color", help="SKU颜色字段"),
-    sample_image: Optional[Path] = typer.Option(None, "--sample", help="抽检样图路径（每隔N张插入）"),
+    sample_image: Optional[Path] = typer.Option(None, "--sample", help="抽检样图路径（覆盖config中的默认值）"),
     hash_threshold: Optional[int] = typer.Option(None, "--hash-threshold", help="汉明距离阈值"),
+    override_width: Optional[int] = typer.Option(None, "--width", help="覆盖preset的输出宽度"),
+    override_height: Optional[int] = typer.Option(None, "--height", help="覆盖preset的输出高度"),
+    override_quality: Optional[int] = typer.Option(None, "--quality", help="覆盖preset的输出质量"),
+    override_format: Optional[str] = typer.Option(None, "--format", help="覆盖preset的输出格式(如webp/jpg/png)"),
+    override_white_ref: Optional[str] = typer.Option(None, "--white-reference", help="覆盖白平衡参考值，如 245,245,245"),
 ) -> None:
     """批量处理图片（核心命令）"""
     _banner()
@@ -242,6 +260,39 @@ def cmd_process(
     workers = workers or global_cfg.get("workers", 4)
     hash_threshold = hash_threshold or global_cfg.get("hash_threshold", 8)
 
+    if override_quality is not None:
+        preset_cfg["output"]["quality"] = override_quality
+    if override_format is not None:
+        preset_cfg["output"]["format"] = override_format.lower()
+    if override_width is not None or override_height is not None:
+        sizes = preset_cfg.get("sizes", [])
+        if override_width is not None and override_height is not None:
+            preset_cfg["sizes"] = [
+                {"name": "自定义", "width": override_width, "height": override_height, "suffix": s.get("suffix", "")}
+                for s in (sizes or [{"suffix": ""}])
+            ] if len(sizes) <= 1 else [
+                {"name": "自定义", "width": override_width, "height": override_height, "suffix": sizes[0].get("suffix", "")}
+            ]
+        elif sizes:
+            preset_cfg["sizes"] = [
+                {**s,
+                 "width": override_width if override_width is not None else s["width"],
+                 "height": override_height if override_height is not None else s["height"]}
+                for s in sizes
+            ]
+    if override_white_ref is not None:
+        try:
+            vals = [int(v.strip()) for v in override_white_ref.split(",")]
+            if len(vals) == 3:
+                preset_cfg["white_balance"]["method"] = "reference"
+                preset_cfg["white_balance"]["reference_white"] = vals
+            else:
+                err_console.print("[red]✗[/red] --white-reference 格式: R,G,B 如 245,245,245")
+                raise typer.Exit(1)
+        except ValueError:
+            err_console.print("[red]✗[/red] --white-reference 格式: R,G,B 如 245,245,245")
+            raise typer.Exit(1)
+
     if output_dir is None:
         output_dir = input_dir.parent / f"{input_dir.name}_processed"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -250,6 +301,17 @@ def cmd_process(
     console.print(f"[cyan]→[/cyan] 输出目录: {output_dir}")
     console.print(f"[cyan]→[/cyan] 预设: [bold]{preset_cfg.get('name', preset)}[/bold]")
     console.print(f"[cyan]→[/cyan] 并行进程: {workers}")
+
+    final_sizes = preset_cfg.get("sizes", [])
+    sizes_str = " / ".join(f'{s.get("name","")}{s["width"]}×{s["height"]}' for s in final_sizes)
+    console.print(f"[cyan]→[/cyan] 输出尺寸: {sizes_str}")
+    console.print(f"[cyan]→[/cyan] 输出格式: {preset_cfg.get('output',{}).get('format','webp')} q={preset_cfg.get('output',{}).get('quality',75)}")
+
+    wb_method = preset_cfg.get("white_balance", {}).get("method", "auto")
+    wb_ref = preset_cfg.get("white_balance", {}).get("reference_white")
+    wb_str = f"{wb_method}" + (f" ref={wb_ref}" if wb_ref else "")
+    console.print(f"[cyan]→[/cyan] 白平衡: {wb_str}")
+
     if dry_run:
         console.print("[yellow]⚠ Dry-run 模式，不实际处理文件[/yellow]")
 
@@ -346,15 +408,49 @@ def cmd_process(
         console.print("[yellow]![/yellow] 没有需要处理的图片")
         raise typer.Exit(0)
 
+    effective_sample_path = sample_image
+    if effective_sample_path is None:
+        cfg_sample = global_cfg.get("sample_image_path")
+        if cfg_sample:
+            p = Path(cfg_sample)
+            if p.exists():
+                effective_sample_path = p
+
     sample_cfg = preset_cfg.get("quality_check", {})
-    if sample_image and sample_image.exists():
+    effective_interval = sample_cfg.get("sample_interval", 20)
+    cfg_interval = global_cfg.get("sample_interval")
+    if cfg_interval is not None:
+        effective_interval = cfg_interval
+
+    if effective_sample_path and effective_sample_path.exists():
+        sample_cfg = {**sample_cfg, "sample_interval": effective_interval}
         from .processor import insert_sample_markers
-        tasks = insert_sample_markers(tasks, sample_cfg, sample_image)
-        console.print(f"[cyan]→[/cyan] 将插入抽检样图: 每 {sample_cfg.get('sample_interval', 20)} 张")
+        tasks = insert_sample_markers(tasks, sample_cfg, effective_sample_path)
+        console.print(f"[cyan]→[/cyan] 抽检样图: {effective_sample_path.name}，每 {effective_interval} 张插入")
+    else:
+        if effective_sample_path and not effective_sample_path.exists():
+            console.print(f"[yellow]![/yellow] 抽检样图不存在: {effective_sample_path}")
 
     console.print(f"[cyan]→[/cyan] 开始处理 [bold]{len(tasks)}[/bold] 张图片")
 
     stats: BatchStats = BatchStats()
+
+    if dry_run:
+        from .processor import process_single_image
+        for t in tasks:
+            result = process_single_image(t, preset_cfg, global_cfg.get("keep_original_structure", True), overwrite, True)
+            _update_stats(stats, result)
+            if result.dry_run_details:
+                is_sample = t.sku_fields.get("brand") == "SAMPLE"
+                tag = "[magenta][抽检][/magenta] " if is_sample else ""
+                for d in result.dry_run_details:
+                    console.print(
+                        f"  {tag}{result.input_path.name} → "
+                        f"{d['filename']}  [{d['width']}×{d['height']}] "
+                        f"{d['format']} q={d['quality']}"
+                    )
+        _print_stats(stats, output_dir, global_cfg.get("error_log", "errors.log"))
+        return
 
     with Progress(
         SpinnerColumn(),
@@ -385,7 +481,7 @@ def cmd_process(
             workers=workers,
             keep_structure=global_cfg.get("keep_original_structure", True),
             overwrite=overwrite,
-            dry_run=dry_run,
+            dry_run=False,
             progress_callback=_prog_cb,
         )
 
@@ -422,21 +518,13 @@ def _print_stats(stats: BatchStats, output_dir: Path, error_log_name: str) -> No
     console.print(f"\n[cyan]→[/cyan] 输出目录: {output_dir}")
 
 
-hash_app = typer.Typer(help="图片去重检测")
-app.add_typer(hash_app, name="hash")
-
-
-@hash_app.command("scan")
-def hash_scan(
-    directory: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True),
-    threshold: int = typer.Option(8, "--threshold", "-t", help="汉明距离阈值（越小越严格）"),
-    action: str = typer.Option("report", "--action", "-a", help="report: 只报告 | link: 软链接归集到 dupes/ | move: 复制归集"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="归集输出目录（默认与输入同）"),
-    recursive: bool = typer.Option(True, "--recursive/--no-recursive", "-r/-R"),
+def _hash_scan_impl(
+    directory: Path,
+    threshold: int = 8,
+    action: str = "report",
+    output: Optional[Path] = None,
+    recursive: bool = True,
 ) -> None:
-    """扫描目录检测重复图片"""
-    _banner()
-
     hasher = ImageHasher(threshold=threshold)
     console.print(f"[cyan]→[/cyan] 扫描目录: {directory}")
     console.print(f"[cyan]→[/cyan] 汉明距离阈值: {threshold}")
@@ -461,7 +549,7 @@ def hash_scan(
 
     if len(hash_infos) < 2:
         console.print("[yellow]![/yellow] 图片太少，无法比较")
-        raise typer.Exit(0)
+        return
 
     with Progress(
         SpinnerColumn(),
@@ -480,7 +568,7 @@ def hash_scan(
 
     if not pairs:
         console.print("[green]✓[/green] 未发现重复图片")
-        raise typer.Exit(0)
+        return
 
     groups = hasher.group_duplicates(pairs)
     console.print(f"[yellow]⚠[/yellow] 发现 [bold]{len(groups)}[/bold] 组重复，涉及 [bold]{sum(len(g.images) for g in groups)}[/bold] 张")
@@ -514,6 +602,44 @@ def hash_scan(
             f"[green]✓[/green] 完成: {stats2['groups']} 组, "
             f"软链接 {stats2['linked']} 个, 复制 {stats2['moved']} 个"
         )
+
+
+@app.command("hash")
+def cmd_hash(
+    directory: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, help="要扫描的图片目录"),
+    threshold: int = typer.Option(8, "--threshold", "-t", help="汉明距离阈值（越小越严格）"),
+    action: str = typer.Option("report", "--action", "-a", help="report: 只报告 | link: 软链接归集到 dupes/ | move: 复制归集"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="归集输出目录（默认与输入同）"),
+    recursive: bool = typer.Option(True, "--recursive/--no-recursive", "-r/-R"),
+) -> None:
+    """扫描目录检测重复图片（直接入口）"""
+    _banner()
+    _hash_scan_impl(directory, threshold, action, output, recursive)
+
+
+hash_app = typer.Typer(help="图片去重检测（子命令组）")
+app.add_typer(hash_app, name="hash-scan")
+
+
+@hash_app.callback(invoke_without_command=True)
+def hash_scan_main(
+    ctx: typer.Context,
+) -> None:
+    if ctx.invoked_subcommand is None:
+        console.print("[dim]使用 picflow hash-scan scan <目录> 或 picflow hash <目录>[/dim]")
+
+
+@hash_app.command("scan")
+def hash_scan(
+    directory: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True),
+    threshold: int = typer.Option(8, "--threshold", "-t", help="汉明距离阈值（越小越严格）"),
+    action: str = typer.Option("report", "--action", "-a", help="report: 只报告 | link: 软链接归集到 dupes/ | move: 复制归集"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="归集输出目录（默认与输入同）"),
+    recursive: bool = typer.Option(True, "--recursive/--no-recursive", "-r/-R"),
+) -> None:
+    """扫描目录检测重复图片"""
+    _banner()
+    _hash_scan_impl(directory, threshold, action, output, recursive)
 
 
 exif_app = typer.Typer(help="EXIF信息查看")

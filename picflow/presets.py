@@ -127,6 +127,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "error_log": "errors.log",
     "keep_original_structure": True,
     "overwrite": False,
+    "sample_image_path": None,
+    "sample_interval": None,
     "logging": {
         "level": "INFO",
         "to_console": True,
