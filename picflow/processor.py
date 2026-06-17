@@ -45,11 +45,13 @@ class ProcessTask:
     sku_group_dir: Optional[Path] = None
     is_sample: bool = False
     sample_position: str = ""
+    task_id: int = -1
 
 
 @dataclass
 class ProcessResult:
     input_path: Path
+    task_index: int = -1
     success: bool = False
     output_paths: List[Path] = field(default_factory=list)
     duration_ms: int = 0
@@ -347,6 +349,7 @@ def _generate_filename(
     index: int,
     padding: int = 4,
     suffix: str = "",
+    extra: Optional[Dict[str, str]] = None,
 ) -> str:
     fields = {
         "brand": sku_fields.get("brand", "BRAND"),
@@ -355,6 +358,8 @@ def _generate_filename(
         "index": str(index).zfill(padding),
         "sku": sku_fields.get("sku", ""),
     }
+    if extra:
+        fields.update(extra)
     name = template.format(**fields)
     return f"{name}{suffix}"
 
@@ -428,7 +433,7 @@ def process_single_image(
 ) -> ProcessResult:
     import time
     start = time.perf_counter()
-    result = ProcessResult(input_path=task.input_path)
+    result = ProcessResult(input_path=task.input_path, task_index=task.task_id)
 
     try:
         if task.input_path.suffix.lower() not in SUPPORTED_INPUT:
@@ -450,9 +455,14 @@ def process_single_image(
             out_fmt = preset.get("output", {}).get("format", "webp")
             out_quality = preset.get("output", {}).get("quality", 75)
             out_dir = _resolve_out_dir()
+            extra_fields = None
+            name_index = task.index
+            if task.is_sample and task.sample_position:
+                extra_fields = {"index": task.sample_position}
+                name_index = 0
             for sz in sizes:
                 fname = _generate_filename(
-                    template, sku, task.index, padding, sz.get("suffix", "")
+                    template, sku, name_index, padding, sz.get("suffix", ""), extra_fields
                 ) + f".{out_fmt}"
                 result.output_paths.append(out_dir / fname)
                 result.dry_run_details.append({
@@ -468,7 +478,7 @@ def process_single_image(
             if task.extra_sizes:
                 for sz in task.extra_sizes:
                     fname = _generate_filename(
-                        template, sku, task.index, padding, sz.get("suffix", "")
+                        template, sku, name_index, padding, sz.get("suffix", ""), extra_fields
                     ) + f".{out_fmt}"
                     result.output_paths.append(out_dir / fname)
                     result.dry_run_details.append({
@@ -513,6 +523,12 @@ def process_single_image(
         )
         base_out_dir.mkdir(parents=True, exist_ok=True)
 
+        sample_extra_fields = None
+        sample_name_index = task.index
+        if task.is_sample and task.sample_position:
+            sample_extra_fields = {"index": task.sample_position}
+            sample_name_index = 0
+
         all_sizes = list(sizes)
         if task.extra_sizes:
             all_sizes.extend(task.extra_sizes)
@@ -525,7 +541,7 @@ def process_single_image(
             pil_result = cv2_to_pil(resized)
 
             fname = _generate_filename(
-                template, sku, task.index, padding, sz.get("suffix", "")
+                template, sku, sample_name_index, padding, sz.get("suffix", ""), sample_extra_fields
             ) + f".{out_fmt}"
             out_path = _get_unique_output_path(base_out_dir, fname, overwrite)
 
@@ -557,13 +573,14 @@ def process_single_image(
     return result
 
 
-def _worker_wrapper(args: Tuple[ProcessTask, Dict, bool, bool, bool]) -> ProcessResult:
-    task, preset, keep_structure, overwrite, dry_run = args
+def _worker_wrapper(args: Tuple[ProcessTask, Dict, bool, bool, bool, int]) -> ProcessResult:
+    task, preset, keep_structure, overwrite, dry_run, task_idx = args
     try:
         return process_single_image(task, preset, keep_structure, overwrite, dry_run)
     except Exception as e:
         return ProcessResult(
             input_path=task.input_path,
+            task_index=task_idx,
             success=False,
             error=ProcessError(
                 path=task.input_path,
@@ -650,7 +667,7 @@ def insert_sample_markers(
             if pos == "sku_start":
                 result.append(_make_sample_task(
                     sample_image_path, task.output_dir,
-                    task.sku_group_dir, pos,
+                    task.sku_group_dir, pos, task.sku_fields,
                 ))
 
         result.append(task)
@@ -660,13 +677,13 @@ def insert_sample_markers(
             if pos == "sku_end":
                 result.append(_make_sample_task(
                     sample_image_path, task.output_dir,
-                    task.sku_group_dir, pos,
+                    task.sku_group_dir, pos, task.sku_fields,
                 ))
 
         if interval > 0 and (i + 1) % interval == 0 and i < len(tasks) - 1:
             result.append(_make_sample_task(
                 sample_image_path, task.output_dir,
-                task.sku_group_dir, f"interval_{i+1}",
+                task.sku_group_dir, f"interval_{i+1}", task.sku_fields,
             ))
 
     return result
@@ -677,13 +694,14 @@ def _make_sample_task(
     output_dir: Path,
     sku_group_dir: Optional[Path],
     position: str,
+    sku_fields: Optional[Dict[str, str]] = None,
 ) -> ProcessTask:
     return ProcessTask(
         input_path=sample_image_path,
         rel_path=Path("_SAMPLE.webp"),
         output_dir=output_dir,
         index=0,
-        sku_fields={"brand": "SAMPLE", "category": "CHECK", "color": "REF"},
+        sku_fields=dict(sku_fields) if sku_fields else {"brand": "SAMPLE", "category": "CHECK", "color": "REF"},
         extra_sizes=[{"name": "sample", "width": 800, "height": 800, "suffix": ""}],
         sku_group_dir=sku_group_dir,
         is_sample=True,
@@ -712,13 +730,16 @@ def batch_process(
 
     if workers <= 1 or len(tasks) <= 2 or dry_run:
         for idx, task in enumerate(tasks):
+            task.task_id = idx
             result = process_single_image(task, preset, keep_structure, overwrite, dry_run)
             _update_stats(stats, result)
             if progress_callback:
                 progress_callback(result, idx + 1, len(tasks))
     else:
+        for idx, task in enumerate(tasks):
+            task.task_id = idx
         worker_args = [
-            (task, preset, keep_structure, overwrite, dry_run) for task in tasks
+            (task, preset, keep_structure, overwrite, dry_run, i) for i, task in enumerate(tasks)
         ]
         completed = 0
         try:
@@ -735,6 +756,7 @@ def batch_process(
                         idx = future_to_idx[future]
                         result = ProcessResult(
                             input_path=tasks[idx].input_path,
+                            task_index=idx,
                             success=False,
                             error=ProcessError(
                                 path=tasks[idx].input_path,
@@ -750,6 +772,7 @@ def batch_process(
             for i in range(completed, len(tasks)):
                 result = ProcessResult(
                     input_path=tasks[i].input_path,
+                    task_index=i,
                     success=False,
                     error=ProcessError(
                         path=tasks[i].input_path,

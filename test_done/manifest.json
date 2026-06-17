@@ -1,6 +1,6 @@
 {
   "meta": {
-    "created_at": "2026-06-18T02:21:16.766236",
+    "created_at": "2026-06-18T02:51:47.292262",
     "preset": "taobao",
     "input_dir": "test_raw",
     "output_dir": "test_done",
@@ -9,14 +9,15 @@
     "total_success": 23,
     "total_failed": 0,
     "total_samples": 11,
-    "total_duration_ms": 8337
+    "total_duration_ms": 22093
   },
   "entries": [
     {
       "input_path": "d:/work/twpw/h0014/test_raw/nike/shoes/IMG_000_red.jpg",
       "output_paths": [
-        "test_done/BRAND/shirts/blue/BRAND_shirts_blue_0001_main.webp",
-        "test_done/BRAND/shirts/blue/BRAND_shirts_blue_0001_detail.webp"
+        "test_done/adidas/shirts/blue/adidas_shirts_blue_sku_start_main.webp",
+        "test_done/adidas/shirts/blue/adidas_shirts_blue_sku_start_detail.webp",
+        "test_done/adidas/shirts/blue/adidas_shirts_blue_sku_start.webp"
       ],
       "sizes": [
         {
@@ -40,22 +41,22 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 1610,
+      "duration_ms": 1640,
       "is_sample": true,
       "sample_position": "sku_start",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "SAMPLE/CHECK/REF",
-      "sku_dir": "test_done\\BRAND\\shirts\\blue",
+      "sku_key": "adidas/shirts/blue",
+      "sku_dir": "test_done\\adidas\\shirts\\blue",
       "mtime": 1781715808.280147,
       "file_size": 294451
     },
     {
       "input_path": "test_raw/adidas/shirts/IMG_003_blue.jpg",
       "output_paths": [
-        "test_done/BRAND/shirts/blue/BRAND_shirts_blue_0003_main.webp",
-        "test_done/BRAND/shirts/blue/BRAND_shirts_blue_0003_detail.webp"
+        "test_done/adidas/shirts/blue/adidas_shirts_blue_0001_main.webp",
+        "test_done/adidas/shirts/blue/adidas_shirts_blue_0001_detail.webp"
       ],
       "sizes": [
         {
@@ -73,22 +74,22 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 1627,
+      "duration_ms": 806,
       "is_sample": false,
       "sample_position": "",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "BRAND/shirts/blue",
-      "sku_dir": "test_done\\BRAND\\shirts\\blue",
+      "sku_key": "adidas/shirts/blue",
+      "sku_dir": "test_done\\adidas\\shirts\\blue",
       "mtime": 1781715808.416851,
       "file_size": 258728
     },
     {
       "input_path": "test_raw/adidas/shirts/IMG_004_blue.jpg",
       "output_paths": [
-        "test_done/BRAND/shirts/blue/BRAND_shirts_blue_0002_main.webp",
-        "test_done/BRAND/shirts/blue/BRAND_shirts_blue_0002_detail.webp"
+        "test_done/adidas/shirts/blue/adidas_shirts_blue_0002_main.webp",
+        "test_done/adidas/shirts/blue/adidas_shirts_blue_0002_detail.webp"
       ],
       "sizes": [
         {
@@ -106,23 +107,22 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 1646,
+      "duration_ms": 815,
       "is_sample": false,
       "sample_position": "",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "BRAND/shirts/blue",
-      "sku_dir": "test_done\\BRAND\\shirts\\blue",
+      "sku_key": "adidas/shirts/blue",
+      "sku_dir": "test_done\\adidas\\shirts\\blue",
       "mtime": 1781715808.4607322,
       "file_size": 297873
     },
     {
       "input_path": "test_raw/adidas/shirts/IMG_005_blue.jpg",
       "output_paths": [
-        "test_done/BRAND/shirts/blue/SAMPLE_CHECK_REF_0000_main.webp",
-        "test_done/BRAND/shirts/blue/SAMPLE_CHECK_REF_0000_detail.webp",
-        "test_done/BRAND/shirts/blue/SAMPLE_CHECK_REF_0000.webp"
+        "test_done/adidas/shirts/blue/adidas_shirts_blue_0003_main.webp",
+        "test_done/adidas/shirts/blue/adidas_shirts_blue_0003_detail.webp"
       ],
       "sizes": [
         {
@@ -140,22 +140,23 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 1867,
+      "duration_ms": 880,
       "is_sample": false,
       "sample_position": "",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "BRAND/shirts/blue",
-      "sku_dir": "test_done\\BRAND\\shirts\\blue",
+      "sku_key": "adidas/shirts/blue",
+      "sku_dir": "test_done\\adidas\\shirts\\blue",
       "mtime": 1781715808.499713,
       "file_size": 286749
     },
     {
       "input_path": "d:/work/twpw/h0014/test_raw/nike/shoes/IMG_000_red.jpg",
       "output_paths": [
-        "test_done/BRAND/shirts/white/BRAND_shirts_white_0004_main.webp",
-        "test_done/BRAND/shirts/white/BRAND_shirts_white_0004_detail.webp"
+        "test_done/adidas/shirts/blue/adidas_shirts_blue_sku_end_main.webp",
+        "test_done/adidas/shirts/blue/adidas_shirts_blue_sku_end_detail.webp",
+        "test_done/adidas/shirts/blue/adidas_shirts_blue_sku_end.webp"
       ],
       "sizes": [
         {
@@ -179,23 +180,23 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 933,
+      "duration_ms": 1035,
       "is_sample": true,
       "sample_position": "sku_end",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "SAMPLE/CHECK/REF",
-      "sku_dir": "test_done\\BRAND\\shirts\\blue",
+      "sku_key": "adidas/shirts/blue",
+      "sku_dir": "test_done\\adidas\\shirts\\blue",
       "mtime": 1781715808.280147,
       "file_size": 294451
     },
     {
       "input_path": "d:/work/twpw/h0014/test_raw/nike/shoes/IMG_000_red.jpg",
       "output_paths": [
-        "test_done/BRAND/shirts/blue/SAMPLE_CHECK_REF_0000_main.webp",
-        "test_done/BRAND/shirts/blue/SAMPLE_CHECK_REF_0000_detail.webp",
-        "test_done/BRAND/shirts/blue/SAMPLE_CHECK_REF_0000.webp"
+        "test_done/adidas/shirts/blue/adidas_shirts_blue_interval_3_main.webp",
+        "test_done/adidas/shirts/blue/adidas_shirts_blue_interval_3_detail.webp",
+        "test_done/adidas/shirts/blue/adidas_shirts_blue_interval_3.webp"
       ],
       "sizes": [
         {
@@ -219,23 +220,23 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 1198,
+      "duration_ms": 1056,
       "is_sample": true,
       "sample_position": "interval_3",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "SAMPLE/CHECK/REF",
-      "sku_dir": "test_done\\BRAND\\shirts\\blue",
+      "sku_key": "adidas/shirts/blue",
+      "sku_dir": "test_done\\adidas\\shirts\\blue",
       "mtime": 1781715808.280147,
       "file_size": 294451
     },
     {
       "input_path": "d:/work/twpw/h0014/test_raw/nike/shoes/IMG_000_red.jpg",
       "output_paths": [
-        "test_done/BRAND/shirts/blue/SAMPLE_CHECK_REF_0000_main.webp",
-        "test_done/BRAND/shirts/blue/SAMPLE_CHECK_REF_0000_detail.webp",
-        "test_done/BRAND/shirts/blue/SAMPLE_CHECK_REF_0000.webp"
+        "test_done/adidas/shirts/white/adidas_shirts_white_sku_start_main.webp",
+        "test_done/adidas/shirts/white/adidas_shirts_white_sku_start_detail.webp",
+        "test_done/adidas/shirts/white/adidas_shirts_white_sku_start.webp"
       ],
       "sizes": [
         {
@@ -259,23 +260,22 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 1215,
+      "duration_ms": 1035,
       "is_sample": true,
       "sample_position": "sku_start",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "SAMPLE/CHECK/REF",
-      "sku_dir": "test_done\\BRAND\\shirts\\white",
+      "sku_key": "adidas/shirts/white",
+      "sku_dir": "test_done\\adidas\\shirts\\white",
       "mtime": 1781715808.280147,
       "file_size": 294451
     },
     {
       "input_path": "test_raw/adidas/shirts/IMG_009_white.jpg",
       "output_paths": [
-        "test_done/BRAND/shirts/white/SAMPLE_CHECK_REF_0000_main.webp",
-        "test_done/BRAND/shirts/white/SAMPLE_CHECK_REF_0000_detail.webp",
-        "test_done/BRAND/shirts/white/SAMPLE_CHECK_REF_0000.webp"
+        "test_done/adidas/shirts/white/adidas_shirts_white_0004_main.webp",
+        "test_done/adidas/shirts/white/adidas_shirts_white_0004_detail.webp"
       ],
       "sizes": [
         {
@@ -293,22 +293,22 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 1236,
+      "duration_ms": 898,
       "is_sample": false,
       "sample_position": "",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "BRAND/shirts/white",
-      "sku_dir": "test_done\\BRAND\\shirts\\white",
+      "sku_key": "adidas/shirts/white",
+      "sku_dir": "test_done\\adidas\\shirts\\white",
       "mtime": 1781715808.6689754,
       "file_size": 275891
     },
     {
       "input_path": "test_raw/adidas/shirts/IMG_010_white.jpg",
       "output_paths": [
-        "test_done/BRAND/shirts/white/BRAND_shirts_white_0005_main.webp",
-        "test_done/BRAND/shirts/white/BRAND_shirts_white_0005_detail.webp"
+        "test_done/adidas/shirts/white/adidas_shirts_white_0005_main.webp",
+        "test_done/adidas/shirts/white/adidas_shirts_white_0005_detail.webp"
       ],
       "sizes": [
         {
@@ -326,22 +326,22 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 1036,
+      "duration_ms": 823,
       "is_sample": false,
       "sample_position": "",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "BRAND/shirts/white",
-      "sku_dir": "test_done\\BRAND\\shirts\\white",
+      "sku_key": "adidas/shirts/white",
+      "sku_dir": "test_done\\adidas\\shirts\\white",
       "mtime": 1781715808.7102365,
       "file_size": 278956
     },
     {
       "input_path": "test_raw/adidas/shirts/IMG_011_white.jpg",
       "output_paths": [
-        "test_done/BRAND/shirts/white/BRAND_shirts_white_0006_main.webp",
-        "test_done/BRAND/shirts/white/BRAND_shirts_white_0006_detail.webp"
+        "test_done/adidas/shirts/white/adidas_shirts_white_0006_main.webp",
+        "test_done/adidas/shirts/white/adidas_shirts_white_0006_detail.webp"
       ],
       "sizes": [
         {
@@ -359,23 +359,23 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 1029,
+      "duration_ms": 833,
       "is_sample": false,
       "sample_position": "",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "BRAND/shirts/white",
-      "sku_dir": "test_done\\BRAND\\shirts\\white",
+      "sku_key": "adidas/shirts/white",
+      "sku_dir": "test_done\\adidas\\shirts\\white",
       "mtime": 1781715808.7506945,
       "file_size": 283966
     },
     {
       "input_path": "d:/work/twpw/h0014/test_raw/nike/shoes/IMG_000_red.jpg",
       "output_paths": [
-        "test_done/BRAND/shirts/white/SAMPLE_CHECK_REF_0000_main.webp",
-        "test_done/BRAND/shirts/white/SAMPLE_CHECK_REF_0000_detail.webp",
-        "test_done/BRAND/shirts/white/SAMPLE_CHECK_REF_0000.webp"
+        "test_done/adidas/shirts/white/adidas_shirts_white_sku_end_main.webp",
+        "test_done/adidas/shirts/white/adidas_shirts_white_sku_end_detail.webp",
+        "test_done/adidas/shirts/white/adidas_shirts_white_sku_end.webp"
       ],
       "sizes": [
         {
@@ -399,23 +399,23 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 1332,
+      "duration_ms": 1038,
       "is_sample": true,
       "sample_position": "sku_end",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "SAMPLE/CHECK/REF",
-      "sku_dir": "test_done\\BRAND\\shirts\\white",
+      "sku_key": "adidas/shirts/white",
+      "sku_dir": "test_done\\adidas\\shirts\\white",
       "mtime": 1781715808.280147,
       "file_size": 294451
     },
     {
       "input_path": "d:/work/twpw/h0014/test_raw/nike/shoes/IMG_000_red.jpg",
       "output_paths": [
-        "test_done/BRAND/shirts/white/SAMPLE_CHECK_REF_0000_main.webp",
-        "test_done/BRAND/shirts/white/SAMPLE_CHECK_REF_0000_detail.webp",
-        "test_done/BRAND/shirts/white/SAMPLE_CHECK_REF_0000.webp"
+        "test_done/adidas/shirts/white/adidas_shirts_white_interval_6_main.webp",
+        "test_done/adidas/shirts/white/adidas_shirts_white_interval_6_detail.webp",
+        "test_done/adidas/shirts/white/adidas_shirts_white_interval_6.webp"
       ],
       "sizes": [
         {
@@ -439,22 +439,23 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 1293,
+      "duration_ms": 1035,
       "is_sample": true,
       "sample_position": "interval_6",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "SAMPLE/CHECK/REF",
-      "sku_dir": "test_done\\BRAND\\shirts\\white",
+      "sku_key": "adidas/shirts/white",
+      "sku_dir": "test_done\\adidas\\shirts\\white",
       "mtime": 1781715808.280147,
       "file_size": 294451
     },
     {
       "input_path": "d:/work/twpw/h0014/test_raw/nike/shoes/IMG_000_red.jpg",
       "output_paths": [
-        "test_done/BRAND/shoes/red/BRAND_shoes_red_0007_main.webp",
-        "test_done/BRAND/shoes/red/BRAND_shoes_red_0007_detail.webp"
+        "test_done/nike/shoes/red/nike_shoes_red_sku_start_main.webp",
+        "test_done/nike/shoes/red/nike_shoes_red_sku_start_detail.webp",
+        "test_done/nike/shoes/red/nike_shoes_red_sku_start.webp"
       ],
       "sizes": [
         {
@@ -478,22 +479,22 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 894,
+      "duration_ms": 1072,
       "is_sample": true,
       "sample_position": "sku_start",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "SAMPLE/CHECK/REF",
-      "sku_dir": "test_done\\BRAND\\shoes\\red",
+      "sku_key": "nike/shoes/red",
+      "sku_dir": "test_done\\nike\\shoes\\red",
       "mtime": 1781715808.280147,
       "file_size": 294451
     },
     {
       "input_path": "test_raw/nike/shoes/IMG_000_red.jpg",
       "output_paths": [
-        "test_done/BRAND/shoes/red/BRAND_shoes_red_0009_main.webp",
-        "test_done/BRAND/shoes/red/BRAND_shoes_red_0009_detail.webp"
+        "test_done/nike/shoes/red/nike_shoes_red_0007_main.webp",
+        "test_done/nike/shoes/red/nike_shoes_red_0007_detail.webp"
       ],
       "sizes": [
         {
@@ -511,23 +512,22 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 889,
+      "duration_ms": 804,
       "is_sample": false,
       "sample_position": "",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "BRAND/shoes/red",
-      "sku_dir": "test_done\\BRAND\\shoes\\red",
+      "sku_key": "nike/shoes/red",
+      "sku_dir": "test_done\\nike\\shoes\\red",
       "mtime": 1781715808.280147,
       "file_size": 294451
     },
     {
       "input_path": "test_raw/nike/shoes/IMG_001_red.jpg",
       "output_paths": [
-        "test_done/BRAND/shoes/red/SAMPLE_CHECK_REF_0000_main.webp",
-        "test_done/BRAND/shoes/red/SAMPLE_CHECK_REF_0000_detail.webp",
-        "test_done/BRAND/shoes/red/SAMPLE_CHECK_REF_0000.webp"
+        "test_done/nike/shoes/red/nike_shoes_red_0008_main.webp",
+        "test_done/nike/shoes/red/nike_shoes_red_0008_detail.webp"
       ],
       "sizes": [
         {
@@ -545,22 +545,22 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 1253,
+      "duration_ms": 798,
       "is_sample": false,
       "sample_position": "",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "BRAND/shoes/red",
-      "sku_dir": "test_done\\BRAND\\shoes\\red",
+      "sku_key": "nike/shoes/red",
+      "sku_dir": "test_done\\nike\\shoes\\red",
       "mtime": 1781715808.3239098,
       "file_size": 284216
     },
     {
       "input_path": "test_raw/nike/shoes/IMG_002_red.jpg",
       "output_paths": [
-        "test_done/BRAND/shoes/red/BRAND_shoes_red_0008_main.webp",
-        "test_done/BRAND/shoes/red/BRAND_shoes_red_0008_detail.webp"
+        "test_done/nike/shoes/red/nike_shoes_red_0009_main.webp",
+        "test_done/nike/shoes/red/nike_shoes_red_0009_detail.webp"
       ],
       "sizes": [
         {
@@ -578,23 +578,23 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 943,
+      "duration_ms": 784,
       "is_sample": false,
       "sample_position": "",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "BRAND/shoes/red",
-      "sku_dir": "test_done\\BRAND\\shoes\\red",
+      "sku_key": "nike/shoes/red",
+      "sku_dir": "test_done\\nike\\shoes\\red",
       "mtime": 1781715808.374772,
       "file_size": 264487
     },
     {
       "input_path": "d:/work/twpw/h0014/test_raw/nike/shoes/IMG_000_red.jpg",
       "output_paths": [
-        "test_done/BRAND/shoes/red/SAMPLE_CHECK_REF_0000_main.webp",
-        "test_done/BRAND/shoes/red/SAMPLE_CHECK_REF_0000_detail.webp",
-        "test_done/BRAND/shoes/red/SAMPLE_CHECK_REF_0000.webp"
+        "test_done/nike/shoes/red/nike_shoes_red_sku_end_main.webp",
+        "test_done/nike/shoes/red/nike_shoes_red_sku_end_detail.webp",
+        "test_done/nike/shoes/red/nike_shoes_red_sku_end.webp"
       ],
       "sizes": [
         {
@@ -618,22 +618,23 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 1154,
+      "duration_ms": 1065,
       "is_sample": true,
       "sample_position": "sku_end",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "SAMPLE/CHECK/REF",
-      "sku_dir": "test_done\\BRAND\\shoes\\red",
+      "sku_key": "nike/shoes/red",
+      "sku_dir": "test_done\\nike\\shoes\\red",
       "mtime": 1781715808.280147,
       "file_size": 294451
     },
     {
       "input_path": "d:/work/twpw/h0014/test_raw/nike/shoes/IMG_000_red.jpg",
       "output_paths": [
-        "test_done/BRAND/shoes/black/BRAND_shoes_black_0010_main.webp",
-        "test_done/BRAND/shoes/black/BRAND_shoes_black_0010_detail.webp"
+        "test_done/nike/shoes/red/nike_shoes_red_interval_9_main.webp",
+        "test_done/nike/shoes/red/nike_shoes_red_interval_9_detail.webp",
+        "test_done/nike/shoes/red/nike_shoes_red_interval_9.webp"
       ],
       "sizes": [
         {
@@ -657,23 +658,23 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 961,
+      "duration_ms": 985,
       "is_sample": true,
       "sample_position": "interval_9",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "SAMPLE/CHECK/REF",
-      "sku_dir": "test_done\\BRAND\\shoes\\red",
+      "sku_key": "nike/shoes/red",
+      "sku_dir": "test_done\\nike\\shoes\\red",
       "mtime": 1781715808.280147,
       "file_size": 294451
     },
     {
       "input_path": "d:/work/twpw/h0014/test_raw/nike/shoes/IMG_000_red.jpg",
       "output_paths": [
-        "test_done/BRAND/shoes/black/SAMPLE_CHECK_REF_0000_main.webp",
-        "test_done/BRAND/shoes/black/SAMPLE_CHECK_REF_0000_detail.webp",
-        "test_done/BRAND/shoes/black/SAMPLE_CHECK_REF_0000.webp"
+        "test_done/nike/shoes/black/nike_shoes_black_sku_start_main.webp",
+        "test_done/nike/shoes/black/nike_shoes_black_sku_start_detail.webp",
+        "test_done/nike/shoes/black/nike_shoes_black_sku_start.webp"
       ],
       "sizes": [
         {
@@ -697,23 +698,22 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 1219,
+      "duration_ms": 1273,
       "is_sample": true,
       "sample_position": "sku_start",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "SAMPLE/CHECK/REF",
-      "sku_dir": "test_done\\BRAND\\shoes\\black",
+      "sku_key": "nike/shoes/black",
+      "sku_dir": "test_done\\nike\\shoes\\black",
       "mtime": 1781715808.280147,
       "file_size": 294451
     },
     {
       "input_path": "test_raw/nike/shoes/IMG_006_black.jpg",
       "output_paths": [
-        "test_done/BRAND/shoes/red/SAMPLE_CHECK_REF_0000_main.webp",
-        "test_done/BRAND/shoes/red/SAMPLE_CHECK_REF_0000_detail.webp",
-        "test_done/BRAND/shoes/red/SAMPLE_CHECK_REF_0000.webp"
+        "test_done/nike/shoes/black/nike_shoes_black_0010_main.webp",
+        "test_done/nike/shoes/black/nike_shoes_black_0010_detail.webp"
       ],
       "sizes": [
         {
@@ -731,22 +731,22 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 1226,
+      "duration_ms": 767,
       "is_sample": false,
       "sample_position": "",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "BRAND/shoes/black",
-      "sku_dir": "test_done\\BRAND\\shoes\\black",
+      "sku_key": "nike/shoes/black",
+      "sku_dir": "test_done\\nike\\shoes\\black",
       "mtime": 1781715808.5388482,
       "file_size": 249622
     },
     {
       "input_path": "test_raw/nike/shoes/IMG_007_black.jpg",
       "output_paths": [
-        "test_done/BRAND/shoes/black/BRAND_shoes_black_0011_main.webp",
-        "test_done/BRAND/shoes/black/BRAND_shoes_black_0011_detail.webp"
+        "test_done/nike/shoes/black/nike_shoes_black_0011_main.webp",
+        "test_done/nike/shoes/black/nike_shoes_black_0011_detail.webp"
       ],
       "sizes": [
         {
@@ -764,22 +764,22 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 847,
+      "duration_ms": 759,
       "is_sample": false,
       "sample_position": "",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "BRAND/shoes/black",
-      "sku_dir": "test_done\\BRAND\\shoes\\black",
+      "sku_key": "nike/shoes/black",
+      "sku_dir": "test_done\\nike\\shoes\\black",
       "mtime": 1781715808.5855658,
       "file_size": 282456
     },
     {
       "input_path": "test_raw/nike/shoes/IMG_008_black.jpg",
       "output_paths": [
-        "test_done/BRAND/shoes/black/BRAND_shoes_black_0012_main.webp",
-        "test_done/BRAND/shoes/black/BRAND_shoes_black_0012_detail.webp"
+        "test_done/nike/shoes/black/nike_shoes_black_0012_main.webp",
+        "test_done/nike/shoes/black/nike_shoes_black_0012_detail.webp"
       ],
       "sizes": [
         {
@@ -797,23 +797,23 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 834,
+      "duration_ms": 766,
       "is_sample": false,
       "sample_position": "",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "BRAND/shoes/black",
-      "sku_dir": "test_done\\BRAND\\shoes\\black",
+      "sku_key": "nike/shoes/black",
+      "sku_dir": "test_done\\nike\\shoes\\black",
       "mtime": 1781715808.6293645,
       "file_size": 284505
     },
     {
       "input_path": "d:/work/twpw/h0014/test_raw/nike/shoes/IMG_000_red.jpg",
       "output_paths": [
-        "test_done/BRAND/shoes/black/SAMPLE_CHECK_REF_0000_main.webp",
-        "test_done/BRAND/shoes/black/SAMPLE_CHECK_REF_0000_detail.webp",
-        "test_done/BRAND/shoes/black/SAMPLE_CHECK_REF_0000.webp"
+        "test_done/nike/shoes/black/nike_shoes_black_sku_end_main.webp",
+        "test_done/nike/shoes/black/nike_shoes_black_sku_end_detail.webp",
+        "test_done/nike/shoes/black/nike_shoes_black_sku_end.webp"
       ],
       "sizes": [
         {
@@ -837,14 +837,14 @@
       ],
       "format": "webp",
       "quality": 75,
-      "duration_ms": 1025,
+      "duration_ms": 954,
       "is_sample": true,
       "sample_position": "sku_end",
       "success": true,
       "error_category": "",
       "error_message": "",
-      "sku_key": "SAMPLE/CHECK/REF",
-      "sku_dir": "test_done\\BRAND\\shoes\\black",
+      "sku_key": "nike/shoes/black",
+      "sku_dir": "test_done\\nike\\shoes\\black",
       "mtime": 1781715808.280147,
       "file_size": 294451
     }

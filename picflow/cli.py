@@ -296,9 +296,9 @@ def cmd_process(
     recursive: bool = typer.Option(True, "--recursive/--no-recursive", "-r/-R", help="递归扫描子目录"),
     overwrite: bool = typer.Option(False, "--overwrite", help="覆盖已存在的文件"),
     skip_hash: bool = typer.Option(False, "--skip-hash", help="跳过重复检测"),
-    brand: str = typer.Option("BRAND", "--brand", help="SKU品牌字段"),
-    category: str = typer.Option("", "--category", help="SKU品类字段"),
-    color: str = typer.Option("", "--color", help="SKU颜色字段"),
+    brand: Optional[str] = typer.Option(None, "--brand", help="SKU品牌字段（默认从目录识别）"),
+    category: Optional[str] = typer.Option(None, "--category", help="SKU品类字段（默认从目录识别）"),
+    color: Optional[str] = typer.Option(None, "--color", help="SKU颜色字段（默认从文件名识别）"),
     sample_image: Optional[Path] = typer.Option(None, "--sample", help="抽检样图路径（覆盖config中的默认值）"),
     hash_threshold: Optional[int] = typer.Option(None, "--hash-threshold", help="汉明距离阈值"),
     override_width: Optional[int] = typer.Option(None, "--width", help="覆盖preset的输出宽度"),
@@ -472,7 +472,13 @@ def cmd_process(
     for abs_path, rel_path in scanned:
         if abs_path in skip_paths:
             continue
-        task_sku_fields = {"brand": brand, "category": category, "color": color}
+        task_sku_fields: Dict[str, str] = {}
+        if brand:
+            task_sku_fields["brand"] = brand
+        if category:
+            task_sku_fields["category"] = category
+        if color:
+            task_sku_fields["color"] = color
         sku_group_dir = None
         if sku_group:
             from .processor import _extract_sku_from_path
@@ -607,8 +613,8 @@ def cmd_process(
     out_quality = preset_cfg.get("output", {}).get("quality", 75)
     final_sizes = preset_cfg.get("sizes", [])
 
-    for i, result in enumerate(results_list):
-        t = tasks[i] if i < len(tasks) else None
+    for result in results_list:
+        t = tasks[result.task_index] if 0 <= result.task_index < len(tasks) else None
         if t is None:
             continue
         sku_key = _compute_sku_key(t)
